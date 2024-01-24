@@ -16,7 +16,7 @@ classdef BCBase < matlab.mixin.Heterogeneous
             % V0   - Undisturbed freestream velocity (m/s)
             % d0   - Undisturbed freestream depth (m)
             % beta - Blockage ratio (as a fraction)
-        correctorNames = {'CP', 'CT', 'CL', 'CF', 'CQ', 'TSR', 'V0', 'd0', 'beta'};
+        correctorNames = {'CP', 'CT', 'CL', 'CF', 'CQ', 'TSR', 'V0', 'd0', 'beta', 'temp'};
     end
 
     % Abstract methods: these must be implemented in order for a class to
@@ -125,7 +125,7 @@ classdef BCBase < matlab.mixin.Heterogeneous
                 end
                 
                 % Check size of beta and d0
-                checkFields = BCBase.correctorNames(end-2:end);
+                checkFields = {'beta', 'd0'};
                 for j = 1:length(checkFields)
                     if length(confData(i).(checkFields{j})) == 1
                         confData(i).(checkFields{j}) = repmat(confData(i).(checkFields{j}), targetSize(1), targetSize(2));

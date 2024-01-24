@@ -93,7 +93,7 @@ classdef BWClosedChannel < BCBase
             arguments
                 bw
                 conf
-                u2u1Guess (1,2) = [1.4 20]
+                u2u1Guess (1,:) = [1.4]
             end
 
             % Check input for correct sizing
@@ -171,7 +171,7 @@ classdef BWClosedChannel < BCBase
             arguments
                 bw
                 conf
-                u2u1Guess (1,2) = [1.4 20]
+                u2u1Guess (1,:) = [1.4]
                 options.correctionType {mustBeText, ismember(options.correctionType, {'standard', 'bluff body'})} = 'standard'
                 options.scalingVelOverride {mustBeText, ismember(options.scalingVelOverride, {'', 'u1', 'u2', 'ut', 'V0Prime'})} = ''
             end
@@ -257,7 +257,7 @@ classdef BWClosedChannel < BCBase
                 bw
                 conf_1
                 beta_2 (1,1)
-                u2u1Guess (1,2) = [1.4 20]
+                u2u1Guess (1,:) = [1.4]
             end
 
             % Solve closed-channel LMAD at confinement 1
@@ -283,8 +283,8 @@ classdef BWClosedChannel < BCBase
                     currForecast = bw.convertConfToUnconf(conf_1(i,j), V0_2);
 
                     % Set d0 to avoid errors
-                    currForecast.d0 = NaN;
-                    currForecast.beta = beta_2;
+                    currForecast.d0 = NaN .* ones(size(currForecast.V0));
+                    currForecast.beta = beta_2 .* ones(size(currForecast.V0));
  
                     % Send this back through LMAD to get velocities and
                     % check
@@ -408,6 +408,27 @@ classdef BWClosedChannel < BCBase
             V0 = u1 .* BWClosedChannel.solveV0U1_blockage(u2u1, beta, utu1);
         end
 
+        %% Maintaining dynamic similarity during forecasting
+
+        function rho2 = calcRhoFromRe(nu1, V01, V02)
+
+            % Solve for nu2
+            nu2 = nu1 .* V02 ./ V01;
+
+            % Determine temperature of corresponding
+            % Set options
+            options = optimset('TolX', 1e-16);
+            temp = fzero(@(T) BWClosedChannel.convergeTemp2(T, nu2), [1e-6, 100], options);
+
+            % Get corresponding density
+            rho2 = getWaterProps(temp);
+        end
+
+        function err = convergeTemp2(TGuess, nuKnown)
+            [~, nuGuess] = getWaterProps(TGuess);
+            err = nuKnown - nuGuess;
+        end
+
         %% Iteration scheme for solving for u2/u1, ut, and u2 via Ross and Polagye EQs 21-23
         
         function [u2u1, err, exitFlag] = convergeU2U1(u2u1Guess, conf)
@@ -432,12 +453,13 @@ classdef BWClosedChannel < BCBase
             % Loop through points
             for k = 1:nPoints
                 % Check if good value of u2u1 guess for this point
-                u2u1Guess = BWClosedChannel.checkU2U1Guess(u2u1Guess, conf.beta(k), conf.CT(k));
+                % u2u1Guess = BWClosedChannel.checkU2U1Guess(u2u1Guess, conf.beta(k), conf.CT(k));
 
                 % If good point, proceed
                 if all(~isnan(u2u1Guess)) && (conf.CT(k) >= 0)
                     currFun = @(u2u1) BWClosedChannel.u2u1Compare(u2u1, conf.beta(k), conf.CT(k));
-                    [u2u1(k), err(k), exitFlag(k)] = fzero(currFun, u2u1Guess);
+                    % [u2u1(k), err(k), exitFlag(k)] = fzero(currFun, u2u1Guess);
+                    [u2u1(k), err(k), exitFlag(k)] = fminsearch(currFun, u2u1Guess);
                 else
                     warning('Negative CT value or bad u2u1Guess: skipping application of LMAD for this point');
                     u2u1(k) = nan;
@@ -461,12 +483,17 @@ classdef BWClosedChannel < BCBase
             % 21/22, as well as Ross and Polagye EQ 23, and returns the error
             % between the two methods.
             [V0U1_blockage, V0U1_thrust] = BWClosedChannel.solveV0U1_both(u2u1Guess, beta, CT);
-            err = V0U1_blockage - V0U1_thrust; % Compute error between those values
+
+            % Fzero error
+            % err = V0U1_blockage - V0U1_thrust; % Compute error between those values
+
+            % Fminsearch error
+            err = abs(V0U1_blockage - V0U1_thrust); % Compute error between those values
         end
 
         %% Analytical forecasting - error analysis
 
-        function [forecastErr] = quantifyForecastError(confPredict, confReference)
+        function [forecastErr] = quantifyForecastError(confPredict, confReference, options)
             % Quantifies error in each point of a blockage forecast
             % Inputs:
             %    confPredict   - Structure of predicted performance data at
@@ -479,6 +506,12 @@ classdef BWClosedChannel < BCBase
             %                    confReference. Error is evaluated for the
             %                    following fields, if present in both
             %                    structures: CP, CT, CL, CF, CQ, V0.
+            arguments
+                confPredict
+                confReference
+                options.eachPercentage = false;
+                options.peakPercentage = false;
+            end
 
             forecastErr = struct;
             predictMetrics = {'CP', 'CT', 'CL', 'CF', 'CQ', 'V0'}; % Meaningful metrics for quantifying error
@@ -486,6 +519,9 @@ classdef BWClosedChannel < BCBase
             for j = 1:size(confPredict, 2) % For each forecast blockage
                 % Get the current TSR
                 TSRInterp = confReference(j).TSR;
+                
+                % Get index of maximum performance
+                [~, maxInd] = max(confReference(j).CP);
 
                 for i = 1:size(confPredict, 1) % For each dataset that was used to make a forecast
 
@@ -499,6 +535,14 @@ classdef BWClosedChannel < BCBase
                             
                             % Compute error
                             forecastErr(i,j).(predictMetrics{k}) = currInterp - confReference(j).(predictMetrics{k});
+
+                            if options.eachPercentage % Normalize each point by the reference point
+                                forecastErr(i,j).(predictMetrics{k}) = forecastErr(i,j).(predictMetrics{k}) ./ confReference(j).(predictMetrics{k}) .* 100;
+
+                            elseif options.peakPercentage % Normalize each point by max efficiency of reference
+
+                                forecastErr(i,j).(predictMetrics{k}) = forecastErr(i,j).(predictMetrics{k}) ./ confReference(j).(predictMetrics{k})(maxInd) .* 100;
+                            end
                         end
                     end
 

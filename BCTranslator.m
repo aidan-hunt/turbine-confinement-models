@@ -18,7 +18,8 @@ classdef BCTranslator < BCBase
         % Uinf/V0             : "Undisturbed" freestream velocity (m/s)
         % FST(:,d0FSTInd)/d0  : "Undisturbed" dynamic depth (m)
         % B(:,betaFSTInd)/beta: Channel blockage (decimal)
-        daqNames = {'eff', 'cThrust', 'cLat', 'cForce', 'cTorque', 'TSR', 'Uinf', 'FST', 'B'};
+        daqNames = {'eff', 'cThrust', 'cLat', 'cForce', 'cTorque', 'TSR', 'Uinf', 'FST', 'B', 'temp'};
+        flipList = {'FY', 'MX', 'MZ', 'cTorque', 'cLat', 'turbPos', 'turbVel', 'TSR'};
     end
 
     methods (Static, Access = public)
@@ -73,8 +74,11 @@ classdef BCTranslator < BCBase
             % Loop through tds and fds, computing array averages when
             % appropriate.
             confData = struct;
+
+            % Get mean velocities
+            meanVels = mean([tds.turbVel], 1);
+
             for i = 1:length(oldNames)
-                currField = oldNames{i};
 
                 % The below only works for single turbines...?
                 % if isfield(tds, oldNames{i}) && isrow(tds.(oldNames{i})) % Catch old data case
@@ -83,13 +87,16 @@ classdef BCTranslator < BCBase
                 % if isfield(fds, oldNames{i}) && isrow(fds.(oldNames{i})) % Catch old data case
                 %     fds.(oldNames{i}) = fds.(oldNames{i})';
                 % end
-                switch currField
-                    case {'eff', 'cThrust', 'cForce'}
-                        confData.(newNames{i}) = mean([tds.(oldNames{i})], 2);
-                    case {'cLat', 'cTorque'}
-                        confData.(newNames{i}) = mean([tds.(oldNames{i})], 2);
-                    case 'TSR'
-                        confData.(newNames{i}) = mean(abs([tds.(oldNames{i})]), 2);
+                switch oldNames{i}
+                    case {'eff', 'cThrust', 'cForce', 'cLat', 'cTorque', 'TSR'}
+                        % Get data
+                        currData = [tds.(oldNames{i})];
+
+                        % Flip data
+                        currData = BCTranslator.flipMetric(currData, oldNames{i}, meanVels);
+
+                        % Average
+                        confData.(newNames{i}) = mean(currData, 2);
                     case 'Uinf'
                         confData.(newNames{i}) = fds.(oldNames{i});
                     case 'FST'
@@ -108,6 +115,14 @@ classdef BCTranslator < BCBase
                                    'Input data may be from earlier processing code ' ...
                                    'where this was not calculated automatically. Please ' ...
                                    'calculate blockage from FST readings and add to fds as fds.B.'])
+                        end
+                    case 'temp'
+                        % Import density and kinematic viscosity
+                        confData.temp = fds.temp;
+                        confData.rho = zeros(size(fds.temp));
+                        confData.nu = zeros(size(fds.temp));
+                        for k = 1:length(confData.temp)
+                            [confData.rho(k), confData.nu(k)] = getWaterProps(confData.temp(k));
                         end
                 end
 
@@ -292,6 +307,14 @@ classdef BCTranslator < BCBase
             % Get geometric parameters of the channel
             geom.w = flow.width;
             geom.s = (geom.w - (geom.D .* geom.n)) ./ geom.n;
+        end
+
+        function dataOut = flipMetric(dataIn, metricName, meanVel)
+            flipSW = ones(1, size(dataIn, 2));
+            if (ismember(lower(metricName), lower(BCTranslator.flipList)))
+                flipSW(meanVel < 0) = -1;
+            end
+            dataOut = dataIn .* flipSW;
         end
     end
 end

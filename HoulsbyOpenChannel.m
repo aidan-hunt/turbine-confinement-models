@@ -71,7 +71,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
     methods (Access = public)
         %% Main method for solving open-channel linear momentum on an actuator disk
-        function [conf] = solveLMAD(hb, conf, u2u1Guess)
+        function [conf] = solveLMAD(hb, conf, uGuess, options)
             % Solves linear momentum on an actuator disk using a
             % open-channel model. Velocities are estimated using
             % Equations 20, 43-45 from Ross and Polagye (2020).
@@ -105,14 +105,23 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             arguments
                 hb
                 conf
-                u2u1Guess (1,2) = [1.4 20]
+                uGuess (1,:) = [1.4 20]
+                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
+                options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
             end
 
             % Check input for correct sizing
             conf = hb.checkInputSizes(conf);
 
+            % If considering limiting case of Fr -> 0, set depth to
+            % high value.
+            if options.FrZeroLimit
+                conf = hb.setClosedChannelDepth(conf);
+            end
+
             for i = 1:size(conf, 1) % For each row of the input structure
                 for j = 1:size(conf, 2) % For each column of the input structure
+
 
                     % Calculate Froude numbers
                     conf(i,j).Fr = hb.calcFroude(conf(i,j).V0, conf(i,j).d0);
@@ -120,9 +129,16 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                     % Calculate normalized free surface deformation across the rotor
                     conf(i,j).dhToh = hb.solveSurfaceDeformation(conf(i,j).CT, conf(i,j).beta, conf(i,j).Fr);
 
-                    % Use closed channel LMAD to generate reasonable u2 guess from a u2u1 guess.
-                    [u2u1, u2u1Err, u2u1ExitFlag] = hb.convergeU2U1(u2u1Guess, conf(i,j));
-                    u2Guess = hb.solveU2(u2u1, conf(i,j).CT, conf(i,j).V0);
+                    % If u2 guess is not provided, use closed channel LMAD to generate reasonable u2 guess from a u2u1 guess.
+                    switch options.guessMode
+                        case 'u2u1'
+                            [u2u1, u2u1Err, u2u1ExitFlag] = hb.convergeU2U1(uGuess, conf(i,j));
+                            u2Guess = hb.solveU2(u2u1, conf(i,j).CT, conf(i,j).V0);
+                        case 'u2V0'
+                            u2Guess = uGuess .* conf(i,j).V0;
+                        case 'u2'
+                            u2Guess = uGuess;
+                    end
     
                     % Iterate on Ross and Polagye EQs 43 and 44 to find value of u2 that solves for both.
                     [u2, u2Err, u2ExitFlag] = hb.convergeU2(u2Guess, conf(i,j));
@@ -134,9 +150,11 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                     conf(i,j).V0Prime = hb.solveV0Prime(conf(i,j).V0, conf(i,j).CT, conf(i,j).ut);
 
                     % Package diagnostics about u2u1 iteration
-                    [V0U1_blockage, V0U1_thrust] = hb.solveV0U1_both(u2u1, conf(i,j).beta, conf(i,j).CT);
-                    conf(i,j).u2u1Iter = hb.packageDiagnostics(u2u1, [V0U1_blockage, V0U1_thrust], ...
-                                                                 u2u1Err, u2u1ExitFlag);
+                    if strcmp(options.guessMode, 'u2u1')
+                        [V0U1_blockage, V0U1_thrust] = hb.solveV0U1_both(u2u1, conf(i,j).beta, conf(i,j).CT);
+                        conf(i,j).u2u1Iter = hb.packageDiagnostics(u2u1, [V0U1_blockage, V0U1_thrust], ...
+                                                                     u2u1Err, u2u1ExitFlag);
+                    end
 
                     % Package diagnostics about u2 iteration
                     [u1_Fr, u1_Thrust] = hb.solveU1_both(conf(i,j).u2, conf(i,j).beta, conf(i,j).CT, conf(i,j).V0, conf(i,j).Fr);
@@ -154,7 +172,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
         % from the BWClosedChannel class. predictUnconfined is repeated
         % here to update documenation.
 
-        function [unconf, conf] = predictUnconfined(hb, conf, u2u1Guess, options)
+        function [unconf, conf] = predictUnconfined(hb, conf, uGuess, options)
             % Applies open-channel linear momentum on an actuator disk to
             % predict unconfined performance from confined performance
             % data.
@@ -208,17 +226,37 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             arguments
                 hb
                 conf
-                u2u1Guess (1,2) = [1.4 20]
+                uGuess (1,:) = [1.4 20]
+                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
+                options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
                 options.correctionType {mustBeText, ismember(options.correctionType, {'standard', 'bluff body'})} = 'standard'
                 options.scalingVelOverride {mustBeText, ismember(options.scalingVelOverride, {'', 'u1', 'u2', 'ut', 'V0Prime'})} = ''
             end
 
+            % If considering the limiting closed-channel case
+            if options.FrZeroLimit
+                conf = hb.setClosedChannelDepth(conf);
+            end
+
+            % Apply closed channel linear momentum model
+            conf = hb.solveLMAD(conf, uGuess, guessMode=options.guessMode, FrZeroLimit=options.FrZeroLimit);
+
+            % Convert to unconfined using the appropriate (or requested)
+            % scaling velocity
+            scalingVelName = hb.checkScalingVel(options.correctionType, options.scalingVelOverride);
+
+            for i = 1:size(conf,1)
+                for j = 1:size(conf,2)
+                    unconf(i,j) = hb.convertConfToUnconf(conf(i,j), conf(i,j).(scalingVelName));
+                end
+            end
+
             % Just call superclass method
-            [unconf, conf] = predictUnconfined@BWClosedChannel(hb, conf, u2u1Guess, correctionType=options.correctionType, scalingVelOverride=options.scalingVelOverride);
+            % [unconf, conf] = predictUnconfined@BWClosedChannel(hb, conf, uGuess, guessMode=options.guessMode, correctionType=options.correctionType, scalingVelOverride=options.scalingVelOverride);
         end
 
         %% Main method for performing bluff-body analytical blockage forecasting
-        function [conf_2, conf_1] = forecastConfined(hb, conf_1, beta_2, u2u1Guess, options)
+        function [conf_2, conf_1] = forecastConfined(hb, conf_1, beta_2, uGuess, options)
             % Uses a closed-channel bluff-body blockage correction to
             % forecast performance at blockage 2 using performance data at
             % blockage 1. The forecast is performed using an analytical
@@ -267,12 +305,15 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 hb
                 conf_1
                 beta_2 (1,1)
-                u2u1Guess (1,2) = [1.4 20]
-                options.constantFr (1,1) {mustBeNumericOrLogical} = true
+                uGuess (1,:) = [1.4 20]
+                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
+                options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
+                options.constantFr (1,1) {mustBeNumericOrLogical} = true;
+                options.constantRe (1,1) {mustBeNumericOrLogical} = true;
             end
 
             % Solve linear actuator disk
-            conf_1 = hb.solveLMAD(conf_1, u2u1Guess);
+            conf_1 = hb.solveLMAD(conf_1, uGuess, guessMode=options.guessMode, FrZeroLimit=options.FrZeroLimit);
 
             % Now, assume that thrust on the rotor is the same at beta_1
             % and beta_2. If thrust is driven by the bypass velocity, then
@@ -284,9 +325,9 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
                     % Generate V0Guess based on beta1 and beta2
                     % V0_2Guess = conf_1(i,j).beta ./ beta_2 .* conf_1(i,j).V0;
-                    V0_2Guess = conf_1(i,j).V0;
+                    V0_2Guess = conf_1(i,j).V0; % Try to constrain V0 within reasonable values
 
-                    [V0_2, V0_2Err, V0_2ExitFlag] = hb.convergeV02(V0_2Guess, beta_2, conf_1(i,j), options.constantFr);
+                    [V0_2, V0_2Err, V0_2ExitFlag] = hb.convergeV02(V0_2Guess, beta_2, conf_1(i,j), options.constantFr, options.constantRe);
 
                     % Re-scale data using converged velocity
                     currForecast = hb.convertConfToUnconf(conf_1(i,j), V0_2);
@@ -309,7 +350,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
                     % Send back through LMAD to get u1, u2
                     % NOTE: This should result in the same u1, u2 as conf_1
-                    currForecast = hb.solveLMAD(currForecast, u2u1Guess);
+                    currForecast = hb.solveLMAD(currForecast, uGuess, guessMode=options.guessMode);
 
                     % Save
                     conf_2(i,j) = currForecast;
@@ -409,6 +450,14 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             err = 1/2*(dhToh.^3) - 3/2*(dhToh.^2) + (1 - Fr.^2 + (CT.*beta.*Fr.^2)/2)*(dhToh) - (CT .* beta .* Fr.^2)./2;
         end
 
+        function conf = setClosedChannelDepth(conf)
+            depthVal = 1e6;
+            fprintf('Setting depth to %g for open-channel limiting case of Fr -> 0 (closed-channel).\n', depthVal);
+            for i = 1:numel(conf)
+                conf(i).d0 = depthVal .* ones(size(conf(i).d0));
+            end
+        end
+
 
         %% Iteration scheme for solving for u2 using Ross and Polagye equations 43 and 44
         % CT, V0, Fr are known
@@ -437,7 +486,9 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 % If good point, proceed
                 if ~isnan(u2Guess(k)) && (conf.CT(k) >= 0)
                     currFun = @(u2) HoulsbyOpenChannel.u2Compare(u2, conf.beta(k), conf.CT(k), conf.V0(k), conf.Fr(k));
-                    [u2(k), err(k), exitFlag(k)] = fzero(currFun, u2Guess(k));
+
+                    % [u2(k), err(k), exitFlag(k)] = fzero(currFun, u2Guess(k,:));
+                    [u2(k), err(k), exitFlag(k)] = fminsearch(currFun, u2Guess(k,:));
                 else
                     warning('Negative CT value or bad u2Guess: skipping application of LMAD for this point');
                     u2(k) = nan;
@@ -483,9 +534,14 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Solve for u1 both ways
             [u1_Fr, u1_Thrust] = HoulsbyOpenChannel.solveU1_both(u2Guess, beta, CT, V0, Fr);
 
+            % Error for fzero:
+            % err = real(u1_Fr - u1_Thrust); % Take only error of real parts to nudge away from complex solutions
+
+            % Error for fminsearch
+            err = abs(u1_Fr - u1_Thrust);
+
             % Compute error between values
             % err = u1_1 - u1_2; % Compute error between those values
-            err = real(u1_Fr - u1_Thrust); % Take only error of real parts to nudge away from complex solutions
             % err = abs(u1_1) - abs(u1_2); % Take error of magnitudes
         end
 
@@ -509,7 +565,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
         end
 
         %% Iteration scheme for solving for u1 with known u2, unknown V0
-        function [V0_2, err, exitFlag] = convergeV02(V0_2Guess, beta_2, conf_1, constantFr)
+        function [V0_2, err, exitFlag] = convergeV02(V0_2Guess, beta_2, conf_1, constantFr, constantRe)
             % Using Ross and Polagye Equations 43-44 iterates to find V0 
             % that satisfies both EQ 43 and EQ 44, and returns that V0.
             % Used to forecast performance from blockage 1 to blockage 2.
@@ -551,13 +607,30 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
             % Iterate for each point
             for k = 1:nPoints
-                currFun = @(V0_2) HoulsbyOpenChannel.V02Compare(V0_2, d0_2Guess(k), beta_2, conf_1.u2(k), conf_1.CT(k), conf_1.V0(k), conf_1.Fr(k));
-                [V0_2(k), err(k), exitFlag] = fzero(currFun, V0_2Guess(k), options);
+                if constantRe
+                    rho_1 = conf_1.rho(k);
+                    nu_1 = conf_1.nu(k);
+                else
+                    rho_1 = [];
+                    nu_1 = [];
+                end
+
+                currFun = @(V0_2) HoulsbyOpenChannel.V02Compare(V0_2, ...
+                                                                d0_2Guess(k), ...
+                                                                beta_2, ...
+                                                                conf_1.u2(k), ...
+                                                                conf_1.CT(k), ...
+                                                                conf_1.V0(k), ...
+                                                                conf_1.Fr(k), ...
+                                                                rho_1, nu_1);
+
+                % [V0_2(k), err(k), exitFlag] = fzero(currFun, V0_2Guess(k,:), options);
+                [V0_2(k), err(k), exitFlag] = fminsearch(currFun, V0_2Guess(k,:), options);
             end
         end
 
 
-        function err = V02Compare(V0_2Guess, d0_2Guess, beta_2, u2, CT_1, V0_1, Fr_1)
+        function err = V02Compare(V0_2Guess, d0_2Guess, beta_2, u2, CT_1, V0_1, Fr_1, rho_1, nu_1)
             % Calculates V0_2, the freestream velocity at blockage 2, using
             % Ross and Polagye EQs 43 and 44, and returns the error between
             % the values yielded by each method.
@@ -574,9 +647,25 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %
             % ## NOTE: Real part of solution is used to assess convergence
             %          to avoid issues with fzero and complex values.
+            %
+            % 
+ 
+            % If density and viscosity given, compute density ratio to hold
+            % Reynolds number constant at new velocity
+            if ~isempty(rho_1) && ~isempty(nu_1)
+                try 
+                    rho_2 = HoulsbyOpenChannel.calcRhoFromRe(nu_1, V0_1, V0_2Guess);
+                    rhoRatio = rho_1 ./ rho_2;
+                catch
+                    warning('Dynamic similarity cannot be maintained. Setting rho ratio = 1');
+                    rhoRatio = 1;
+                end
+            else
+                rhoRatio = 1;
+            end
 
             % Compute CT
-            CT_2 = HoulsbyOpenChannel.scaleForcingMetric(CT_1, V0_1, V0_2Guess);
+            CT_2 = HoulsbyOpenChannel.scaleForcingMetric(CT_1, V0_1, V0_2Guess) .* rhoRatio;
 
             % Check Fr case
             if ~isnan(d0_2Guess) 
@@ -592,8 +681,9 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
             % Compute error between values
             % err = u1_1 - u1_2; % Compute error between those values
-            err = real(u1_Fr - u1_Thrust); % Take only error of real parts to nudge away from complex solutions
+            % err = real(u1_Fr - u1_Thrust); % Error approach for fzero. Take only error of real parts to nudge away from complex solutions
             % err = abs(u1_1) - abs(u1_2); % Take error of magnitudes
+            err = abs(u1_Fr - u1_Thrust); % Error approach for fminsearch
         end
 
 
