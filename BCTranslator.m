@@ -116,14 +116,14 @@ classdef BCTranslator < BCBase
                                    'where this was not calculated automatically. Please ' ...
                                    'calculate blockage from FST readings and add to fds as fds.B.'])
                         end
-                    case 'temp'
-                        % Import density and kinematic viscosity
-                        confData.temp = fds.temp;
-                        confData.rho = zeros(size(fds.temp));
-                        confData.nu = zeros(size(fds.temp));
-                        for k = 1:length(confData.temp)
-                            [confData.rho(k), confData.nu(k)] = getWaterProps(confData.temp(k));
-                        end
+                    % case 'temp'
+                    %     % Import density and kinematic viscosity
+                    %     confData.temp = fds.temp;
+                    %     confData.rho = zeros(size(fds.temp));
+                    %     confData.nu = zeros(size(fds.temp));
+                    %     for k = 1:length(confData.temp)
+                    %         [confData.rho(k), confData.nu(k)] = getWaterProps(confData.temp(k));
+                    %     end
                 end
 
                 % Force to be column vector
@@ -310,6 +310,19 @@ classdef BCTranslator < BCBase
         end
 
         function dataOut = flipMetric(dataIn, metricName, meanVel)
+            % Flips the sign of dataIn if it is a flippable metric (i.e., a
+            % metric whose sign depends on the direction of rotation, see
+            % BCTranslator.flipList).
+            %
+            % Inputs
+            %   dataIn     - Input data
+            %   metricName - The name of the performance metric that dataIn
+            %                represents
+            %   meanVel    - The mean angular velocity corresponding to
+            %                dataIn
+            % Outputs
+            %   dataOut    - dataIn with its sign flipped, if appropriate
+
             flipSW = ones(1, size(dataIn, 2));
             if (ismember(lower(metricName), lower(BCTranslator.flipList)))
                 flipSW(meanVel < 0) = -1;

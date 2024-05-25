@@ -1,0 +1,20 @@
+# File types that git ignores
+*.asv
+*.mat
+*.fig
+*.dat
+*.hdr
+*.ssl
+*.sen
+*.vhd
+*.pck
+*.vec
+*.ntk
+*.autosave
+*.slx.r20*
+
+
+
+
+
+

@@ -226,8 +226,9 @@ classdef BWClosedChannel < BCBase
             % Uses a closed-channel bluff-body blockage correction to
             % forecast performance at blockage 2 using performance data at
             % blockage 1. The forecast is performed using an analytical
-            % relationship that will be described in an upcoming
-            % publication.
+            % relationship that is similar to that described by Hunt et al
+            % (arxiv link TBD), but that instead uses the closed-channel
+            % equations from Ross and Polagye.
             %
             % Inputs (required)
             %   conf_1    - A structure of confined performance data at blockage 1 with fields
@@ -406,27 +407,6 @@ classdef BWClosedChannel < BCBase
             u2u1 = u2 ./ u1;
             utu1 = ut ./ u1;
             V0 = u1 .* BWClosedChannel.solveV0U1_blockage(u2u1, beta, utu1);
-        end
-
-        %% Maintaining dynamic similarity during forecasting
-
-        function rho2 = calcRhoFromRe(nu1, V01, V02)
-
-            % Solve for nu2
-            nu2 = nu1 .* V02 ./ V01;
-
-            % Determine temperature of corresponding
-            % Set options
-            options = optimset('TolX', 1e-16);
-            temp = fzero(@(T) BWClosedChannel.convergeTemp2(T, nu2), [1e-6, 100], options);
-
-            % Get corresponding density
-            rho2 = getWaterProps(temp);
-        end
-
-        function err = convergeTemp2(TGuess, nuKnown)
-            [~, nuGuess] = getWaterProps(TGuess);
-            err = nuKnown - nuGuess;
         end
 
         %% Iteration scheme for solving for u2/u1, ut, and u2 via Ross and Polagye EQs 21-23

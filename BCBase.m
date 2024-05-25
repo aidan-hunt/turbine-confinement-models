@@ -52,7 +52,7 @@ classdef BCBase < matlab.mixin.Heterogeneous
             for i = 1:length(fieldList)
                 currField = fieldList{i};
                 switch currField % Scale based on which field it is
-                    case 'CP' % Efficiency
+                    case {'CP', 'CP_b'} % Efficiency
                         correctedData = BCBase.scalePowerMetric(conf.(currField), conf.V0, scalingVel);
                     case {'CT', 'CL', 'CF', 'CQ'} % Force/torque
                         correctedData = BCBase.scaleForcingMetric(conf.(currField), conf.V0, scalingVel);
@@ -110,7 +110,7 @@ classdef BCBase < matlab.mixin.Heterogeneous
             % the same length). If scalar values of d0 and beta are
             % provided, converts to vectors of appropriate length.
             for i = 1:length(confData)
-                checkFields = BCBase.correctorNames(1:end-2);
+                checkFields = BCBase.correctorNames(1:end-3);
                 allSizes = [];
                 for j = 1:length(checkFields)
                     if isfield(confData(i), checkFields{j})
@@ -154,6 +154,8 @@ classdef BCBase < matlab.mixin.Heterogeneous
             solInfo.exitFlag = exitFlag;
         end
 
+        %% Checking physical validity
+
         function result = checkPhysicalValidity(conf)
             % Checks whether velocities produced by linear momentum are
             % physically valid as described below. True indicates physical
@@ -185,6 +187,10 @@ classdef BCBase < matlab.mixin.Heterogeneous
                     % Check that freestream is faster than velocity at
                     % turbine
                     result.V0ut = conf(i,j).V0 > conf(i,j).ut;
+
+                    if any(~result.u2utu1) || any(~result.u2V0) || any(~result.V0ut)
+                        warning('Non physical result detected.');
+                    end
                 end
             end
         end
