@@ -18,7 +18,7 @@ classdef BCTranslator < BCBase
         % Uinf/V0             : "Undisturbed" freestream velocity (m/s)
         % FST(:,d0FSTInd)/d0  : "Undisturbed" dynamic depth (m)
         % B(:,betaFSTInd)/beta: Channel blockage (decimal)
-        daqNames = {'eff', 'cThrust', 'cLat', 'cForce', 'cTorque', 'TSR', 'Uinf', 'FST', 'B', 'temp'};
+        daqNames = {'eff', 'cThrust', 'cLat', 'cForce', 'cTorque', 'TSR', 'Uinf', 'FST', 'B'}; % 'temp'};
         flipList = {'FY', 'MX', 'MZ', 'cTorque', 'cLat', 'turbPos', 'turbVel', 'TSR'};
     end
 
