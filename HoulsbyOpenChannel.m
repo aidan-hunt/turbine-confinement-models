@@ -116,7 +116,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             arguments
                 hb
                 conf
-                uGuess (1,1) = [1.4]
+                uGuess (1,1) = [1.04]
                 options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
                 options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
             end
@@ -160,7 +160,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                     % Solve for depths
                     conf(i,j).hBypass = hb.calcBypassDepth(conf(i,j).d0, conf(i,j).V0, conf(i,j).u2);
                     conf(i,j).hdUp = hb.calcUpstreamDiskDepth(conf(i,j).d0, conf(i,j).V0, conf(i,j).ut);
-                    conf(i,j).hdDown = hb.calcUpstreamDiskDepth(conf(i,j).hBypass, conf(i,j).ut, conf(i,j).u1);
+                    conf(i,j).hdDown = hb.calcDownstreamDiskDepth(conf(i,j).hBypass, conf(i,j).ut, conf(i,j).u1);
                     conf(i,j).dhDisk = hb.calcDiskDrop(conf(i,j).V0, conf(i,j).CT);
                     [conf(i,j).dhToh] = hb.calcTotalSurfaceDeformation(conf(i,j).CT, conf(i,j).beta, conf(i,j).Fr);
                     conf(i,j).hFinal = conf(i,j).d0 .* (1 - conf(i,j).dhToh);
