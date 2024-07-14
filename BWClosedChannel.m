@@ -1,12 +1,13 @@
 % Aidan Hunt
 %
-% The BWClosedChannel class implements the Barnsley and Wellicome (1990)
-% closed-channel blockage correction as described by Ross and Polagye in
-% "An experimental assessment of analytical blockage corrections" (2020;
+% The BWClosedChannel class implements closed-channel linear momentum
+% theory and an associated blockage correction following Barnsley and
+% Wellicome (1990) as described by Ross and Polagye in "An experimental
+% assessment of analytical blockage corrections" (2020;
 % https://doi.org/10.1016/j.renene.2020.01.135).
 %
-% Applies linear momentum to an actuator disk in closed channel flow
-% (parallel sided-tube) to solve for the following flow properties:
+% Linear momentum on an actuator disk in closed channel flow (parallel
+% sided-tube) is employed to solve for the following flow properties:
 %   u1      - Core wake velocity
 %   u2      - Bypass velocity
 %   ut      - Velocity at the turbine
@@ -73,9 +74,8 @@ classdef BWClosedChannel < BCBase
             % Inputs
             %   conf      - A structure of confined performance data with fields
             %               as described in the BWClosedChannel class documentation.
-            %   u2u1Guess - A two element vector containing the maximum and
-            %               minimum guess values of u2/u1 for use in
-            %               iteration (default: [1.04 20])
+            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %               (default: 1.4).
             % Outputs
             %   conf      - The input structure with the following fields
             %               added:
@@ -131,9 +131,8 @@ classdef BWClosedChannel < BCBase
             % Inputs (required)
             %   conf      - A structure of confined performance data with fields
             %               as described in the BWClosedChannel class documentation.
-            %   u2u1Guess - A two element vector containing the maximum and
-            %               minimum guess values of u2/u1 for use in
-            %               iteration (default: [1.04 20])
+            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %               (default: 1.4)
             % Inputs (name-value pairs)
             %   correctionType - Type of blockage correction to apply: 
             %       "standard":   scales the confined data by the unconfined freestream velocity (V0Prime, default)
@@ -235,9 +234,8 @@ classdef BWClosedChannel < BCBase
             %               as described in the BWClosedChannel class documentation.
             %   beta_2    - The target blockage at which forecasted
             %               performance data is desired, as a fraction.
-            %   u2u1Guess - A two element vector containing the maximum and
-            %               minimum guess values of u2/u1 for use in
-            %               iteration (default: [1.04 20])
+            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %               (default: 1.4)
             % Outputs
             %   conf_2    - A structure with the same size and fields as
             %               output conf_1, but with each field corresponding to
@@ -415,7 +413,8 @@ classdef BWClosedChannel < BCBase
             % Using Ross and Polagye Equations 21-23, iterates to find u2/u1 that
             % satisfies both EQ 22 and EQ 23, and returns that u2/u1.
             % Inputs:
-            %   u2u1Guess - Initial guess for u2/u1 (as a two element vector for fzero)
+            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %               (default: 1.4)            
             %   conf      - Confined performance data as described in class
             %               documentation
             % Outputs:
@@ -432,8 +431,6 @@ classdef BWClosedChannel < BCBase
 
             % Loop through points
             for k = 1:nPoints
-                % Check if good value of u2u1 guess for this point
-                % u2u1Guess = BWClosedChannel.checkU2U1Guess(u2u1Guess, conf.beta(k), conf.CT(k));
 
                 % If good point, proceed
                 if all(~isnan(u2u1Guess)) && (conf.CT(k) >= 0)
@@ -532,46 +529,6 @@ classdef BWClosedChannel < BCBase
 
         %% Diagnostics
 
-        function u2u1Guess = checkU2U1Guess(u2u1Guess, beta, CT)
-            % Checks u1u2Guess to make sure that it returns a workable
-            % value for iteration. Given an input guess for u2/u1, and
-            % specified values of beta and CT, checks whether the guess
-            % results in an interval with a sign change (necessary for
-            % fzero) and attempts to adjust the guess if not.
-
-            % Prime the loop
-            badGuess = true;
-
-            while badGuess
-                % Evaluate current guess
-                currErr = BWClosedChannel.u2u1Compare(u2u1Guess, beta, CT);
-
-                if (isnan(currErr(1)) || ~isreal(currErr)) % If lower bound is too far left (and has become nan or complex), move back right
-                    % u2u1Guess(1) = u2u1Guess(1) + 0.01;
-                    warning('Initial u2u1Guess results in a complex value at an interval endpoint for beta = %g and CT = %g. This point may not converge. Skipping....', beta, CT);
-                    u2u1Guess = nan;
-                    badGuess = false;
-                else % Check signs
-                    errSigns = sign(currErr);
-                    if (errSigns(1) == errSigns(2)) % If no sign change
-                        warning('Initial u2u1Guess does not provide interval with sign change for beta = %g and CT = %g. Attempting to adjust....', beta, CT);
-                        % Expand the interval and see what happens
-                        u2u1Guess(1) = u2u1Guess(1) - 0.005;
-                        u2u1Guess(2) = u2u1Guess(2) + 0.005;
-%                         if (errSigns(1) < 0) % If left bound is negative, back off
-%                             u2u1Guess(1) = u2u1Guess(1) - 0.005;
-%                         end
-%                         if (errSigns(2) > 0) % If right bound is positive, increase
-%                             u2u1Guess(2) = u2u1Guess(2) + 1;
-%                         end
-                    else % If error is real and with sign change, exit loop.
-                        badGuess = false;
-                    end
-                end
-            end
-        end
-
-        %%  Visualization
         function [err, ax] = plotU2U1ConvergenceRegion(u2u1Test, beta, CT)
             % Plots the error between the two methods for calculating V0/u1
             % (used in u2u1 iteration) for a specific beta and CT. Useful for

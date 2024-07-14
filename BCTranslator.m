@@ -1,8 +1,8 @@
 % Aidan Hunt
 %
-% Translates data from UW cross-flow turbine data acquisition into
-% the format used by the blockage correction classes. The BCTranslator
-% class extends the BCBase class.
+% Translates data from University of Washington cross-flow turbine data
+% acquisition into the format used by the blockage correction classes. The
+% BCTranslator class extends the BCBase class.
 
 classdef BCTranslator < BCBase
     properties (Constant, Access = public)
@@ -243,10 +243,10 @@ classdef BCTranslator < BCBase
 
         function unconfDataOut = translateUnconfData(unconfDataIn)
             % Translates unconfined data using Ross and Polagye naming
-            % conventions back to the naming convention produced by
-            % v4PostProcess. In other words, converts a structure of
-            % unconfined data from BCTranslator.correctorNames to
-            % BCTranslator.daqNames.
+            % conventions back to the naming convention produced by UW data
+            % acquisition (v4PostProcess.m). In other words, converts a
+            % structure of unconfined data from BCTranslator.correctorNames
+            % to BCTranslator.daqNames.
             %
             % See also: daqNames, correctorNames
 

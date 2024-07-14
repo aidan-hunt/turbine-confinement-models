@@ -78,21 +78,19 @@ classdef BCBase < matlab.mixin.Heterogeneous
 
         function powerUnconf = scalePowerMetric(powerConf, V0, scalingVel)
             % Scales a power metric (e.g., CP) using the cubed ratio of
-            % V0/V0Prime (Ross and Polagye (2020) EQ 12) and returns the
-            % result.
+            % V0/scalingVel and returns the result.
             powerUnconf = powerConf .* ((V0 ./ scalingVel).^3);
         end
 
 
         function loadUnconf = scaleForcingMetric(loadConf, V0, scalingVel)
             % Scales a forcing metric (e.g., CT) using the squared ratio of
-            % V0/V0Prime (Ross and Polagye (2020) EQ 13) and returns the
-            % result.
+            % V0/scalingVel and returns the result.
             loadUnconf = loadConf .* ((V0 ./ scalingVel).^2);
         end
 
         function TSRUnconf = scaleTSR(TSRConf, V0, scalingVel)
-            % Scales the tip speed ratio using the ratio of V0/V0Prime 
+            % Scales the tip speed ratio using the ratio of V0/scalingVel 
             % (Ross and Polagye (2020) EQ 14) and returns the result.
             TSRUnconf = TSRConf .* (V0 ./ scalingVel);
         end
@@ -138,7 +136,8 @@ classdef BCBase < matlab.mixin.Heterogeneous
 
         %% Diagnostics
         function solInfo = packageDiagnostics(convX, convY, convErr, exitFlag)
-            % Packages metadata from an fzero iteration into structure.
+            % Packages metadata from an fzero or fminsearch iteration into
+            % structure.
             % Inputs
                 % convX    - The converged input value(s) of the function
                 % convY    - The converged output value(s) of the function.

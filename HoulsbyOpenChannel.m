@@ -1,14 +1,15 @@
 % Aidan Hunt
 %
-% The HoulsbyOpenChannel class implements an open-channel blockage
-% correction based on the open-channel linear momentum theory of Houlsby et
-% al. "Application of linear momentum actuator disc theory to open channel
-% flow" (2008; https://ora.ox.ac.uk/objects/uuid:5576d575-7bac-44b6-ac79-f698edcda40e),
+% The HoulsbyOpenChannel class implements the open-channel linear momentum
+% theory of Houlsby et al. "Application of linear momentum actuator disc
+% theory to open channel flow" (2008;
+% https://ora.ox.ac.uk/objects/uuid:5576d575-7bac-44b6-ac79-f698edcda40e),
 % see also "The Power Available to Tidal Turbines in an Open Channel Flow"
 % by Houlsby and Vogel (2017; http://dx.doi.org/10.1680/jener.15.00035).
-% This code follows the implementation of Ross and Polagye in "An
-% experimental assessment of analytical blockage corrections" 
-% (2020; https://doi.org/10.1016/j.renene.2020.01.135).
+% Additionally, this code implements the Houlsby et al's linear momentum
+% theory as a blockage correction following the implementation of Ross and
+% Polagye in "An experimental assessment of analytical blockage
+% corrections" (2020; https://doi.org/10.1016/j.renene.2020.01.135).
 %
 % Open-channel linear momentum on an actuator disk is used to solve for the
 % following properties:
@@ -40,6 +41,11 @@
 %                       blockage correction basis to predict performance at
 %                       one blockage ratio using data at a different
 %                       blockage ratio.
+%   linearForecast    - Uses open-channel LMAD theory and an assumption of 
+%                       a linear relationship between turbine performance
+%                       (i.e., CP, CT) and blockage at constant TSR (e.g.,
+%                       as observed by Kinsey and Dumas (2017)) to forecast
+%                       performance across blockages.
 % 
 % The methods above expect that confined performance data is provided as an
 % mxn structure array, conf, with the following fields:
@@ -641,7 +647,6 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 conf(i).d0 = depthVal .* ones(size(conf(i).d0));
             end
         end
-
 
         %% Iteration scheme for solving for u2 using Ross and Polagye equations 43 and 44
         % CT, V0, Fr are known

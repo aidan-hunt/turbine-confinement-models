@@ -1,5 +1,11 @@
 % Aidan Hunt
 %
+% NOTE: The method of Werle is included in this repository for reference
+% and for completeness, but is not recommended for use as a blockage
+% correction. It is a recommended that a physics-informed, linear momentum
+% based blockage correction (e.g., those implemented in the BWClosedChannel
+% and HoulsbyOpenChannel classes) be applied instead.
+%
 % Implements a closed-channel blockage correction based on the theory of
 % Werle introduced in "Wind Turbine Wall-Blockage Performance Corrections"
 % (2010; https://doi.org/10.2514/1.44602) and as implemented by Ross and
