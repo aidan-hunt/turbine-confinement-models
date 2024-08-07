@@ -5,7 +5,7 @@ These LMADT models can be used as the basis for analytical blockage corrections,
 ## LMADT model classes
 Each LMADT model is implemented as a MATLAB class:
 - `BWClosedChannel`: Closed-channel linear momentum and blockage correction as described by Barnsley and Wellicome (1990). Follows the implementation of [Ross and Polagye (2020)](https://doi.org/10.1016/j.renene.2020.01.135).
-- `HoulsbyOpenChannel`: Open-channel linear momentum and blockage correction as described by [Houlsby et al. (2008)](https://ora.ox.ac.uk/objects/uuid:5576d575-7bac-44b6-ac79-f698edcda40e). Follows the implementation of [Ross and Polagye (2020)](https://doi.org/10.1016/j.renene.2020.01.135). Note that, as Fr -> 0, the results of `HoulsbyOpenChannel` are equivalent to that of `BWClosedChannel`.
+- `HoulsbyOpenChannel`: Open-channel linear momentum and blockage correction as described by [Houlsby et al. (2008)](https://ora.ox.ac.uk/objects/uuid:5576d575-7bac-44b6-ac79-f698edcda40e). Follows the implementation of [Ross and Polagye (2020)](https://doi.org/10.1016/j.renene.2020.01.135). Note that, as the Froude number approaches 0, the results of `HoulsbyOpenChannel` are equivalent to that of `BWClosedChannel`.
 - `DehtyriovCorrector`: A closed-channel two-scale linear-momentum-based blockage correction for turbine arrays as described by [Dehtyriov et al. (2023)](https://submissions.ewtec.org/proc-ewtec/article/view/366).
 
 ## Helper classes
