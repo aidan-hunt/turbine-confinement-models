@@ -17,7 +17,7 @@
 % The methods above expect that confined performance data is provided as an
 % mxn structure array, conf, with the following fields:
 %   beta (required)   - blockage ratio
-%   V0   (required)   - undisturbed upstream freestream velocity (m/s)
+%   Uinf   (required)   - undisturbed upstream freestream velocity (m/s)
 %   CT   (required)   - thrust coefficient
 %   CP   (optional)   - performance coefficient
 %   CQ   (optional)   - torque coefficient
@@ -75,7 +75,7 @@ classdef DehtyriovCorrector < BCBase
             %               conf structure and the following fields (if the
             %               field was not present in conf, it will not be
             %               present in unconf):
-            %               V0  - unconfined freestream velocity
+            %               Uinf  - unconfined freestream velocity
             %               CT  - unconfined thrust coefficient
             %               CP  - unconfined performance coefficient
             %               CQ  - unconfined torque coefficient
@@ -145,10 +145,10 @@ classdef DehtyriovCorrector < BCBase
             
                     % Solve for velocity correction factor
                     velRatio = dc.calcVelocityRatio(alphaA, CTA);
-                    V0Prime = conf(i,j).V0 ./ velRatio;
+                    UinfPrime = conf(i,j).Uinf ./ velRatio;
         
                     % Perform correction
-                    unconf_temp = dc.convertConfToUnconf(conf(i,j), V0Prime);
+                    unconf_temp = dc.convertConfToUnconf(conf(i,j), UinfPrime);
         
                     % Package results
                     unconf_temp.BA = BA;

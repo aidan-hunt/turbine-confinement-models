@@ -15,8 +15,8 @@ classdef BCTranslator < BCBase
         % cForce/CF           : coefficient of resultant horizontal force
         % cTorque/CQ          : coefficient of torque
         % TSR/TSR             : tip-speed ratio
-        % Uinf/V0             : "Undisturbed" freestream velocity (m/s)
-        % FST(:,d0FSTInd)/d0  : "Undisturbed" dynamic depth (m)
+        % Uinf/Uinf             : "Undisturbed" freestream velocity (m/s)
+        % FST(:,hFSTInd)/h  : "Undisturbed" dynamic depth (m)
         % B(:,betaFSTInd)/beta: Channel blockage (decimal)
         daqNames = {'eff', 'cThrust', 'cLat', 'cForce', 'cTorque', 'TSR', 'Uinf', 'FST', 'B'}; % 'temp'};
         flipList = {'FY', 'MX', 'MZ', 'cTorque', 'cLat', 'turbPos', 'turbVel', 'TSR'};
@@ -24,7 +24,7 @@ classdef BCTranslator < BCBase
 
     methods (Static, Access = public)
         %% Naming convention translation
-        function confData = translateTimeAveConfData(tds, fds, d0FSTInd, betaFSTInd, useAveDepth)
+        function confData = translateTimeAveConfData(tds, fds, hFSTInd, betaFSTInd, useAveDepth)
             % Given time-average cross-flow turbine experimental data as
             % processed via v4PostProcess, parses quantities relevant to
             % blockage corrections and returns as a structure whose fields
@@ -37,8 +37,8 @@ classdef BCTranslator < BCBase
             % Inputs
             % tds         - Time-averaged turbine data from v4PostProcess
             % fds         - Time-averaged flow data from v4PostProcess
-            % d0FSTInd    -  Column of fds.FST to use as representative of the
-            %               undisturbed free surface, d0, for blockage
+            % hFSTInd    -  Column of fds.FST to use as representative of the
+            %               undisturbed free surface, h, for blockage
             %               correction. If using old data format
             %               (fds.FST_single), use [] as input.
             %               Default: 1
@@ -46,8 +46,8 @@ classdef BCTranslator < BCBase
             %               channel blockage, beta, for blockage correction.
             %               Default: 1
             % useAveDepth - Whether to use the average depth over the entire
-            %               test as representative of d0 and beta (true), 
-            %               or to use the measured d0 for each point (false). 
+            %               test as representative of h and beta (true), 
+            %               or to use the measured h for each point (false). 
             %               Default: false
             %
             % Ouputs:
@@ -62,7 +62,7 @@ classdef BCTranslator < BCBase
             arguments
                 tds
                 fds
-                d0FSTInd (1,1) = 1
+                hFSTInd (1,1) = 1
                 betaFSTInd (1,1) = 1
                 useAveDepth = false
             end
@@ -101,7 +101,7 @@ classdef BCTranslator < BCBase
                         confData.(newNames{i}) = fds.(oldNames{i});
                     case 'FST'
                         if isfield(fds, 'FST')
-                            confData.(newNames{i}) = fds.(oldNames{i})(:,d0FSTInd);
+                            confData.(newNames{i}) = fds.(oldNames{i})(:,hFSTInd);
                         elseif isfield(fds, 'FST_single') % Check for old format
                             confData.(newNames{i}) = fds.FST_single;
                         else
@@ -133,9 +133,9 @@ classdef BCTranslator < BCBase
             end
         
             % If user wants to use average depth for corrections, average
-            % the d0 and beta fields.
+            % the h and beta fields.
             if (useAveDepth)
-                confData.d0 = mean(confData.d0);
+                confData.h = mean(confData.h);
                 confData.beta = mean(confData.beta);
             end
         end
@@ -152,7 +152,7 @@ classdef BCTranslator < BCBase
             % See also: daqNames, correctorNames
 
             % Set quick defaults
-            d0FSTInd = 1;
+            hFSTInd = 1;
             betaFSTInd = 1;
             useAveDepth = false;
 
@@ -160,12 +160,12 @@ classdef BCTranslator < BCBase
             for i = 1:size(fileList,1)
                 for j = 1:size(fileList, 2)
                     load(fileList{i,j}, 'tds', 'fds');
-                    confData(i,j) = BCTranslator.translateTimeAveConfData(tds, fds, d0FSTInd, betaFSTInd, useAveDepth);
+                    confData(i,j) = BCTranslator.translateTimeAveConfData(tds, fds, hFSTInd, betaFSTInd, useAveDepth);
                 end
             end
         end
 
-        function confData = translatePhaseAveConfData(tdp, fds, d0FSTInd, betaFSTInd, phasePercInd)
+        function confData = translatePhaseAveConfData(tdp, fds, hFSTInd, betaFSTInd, phasePercInd)
             % Given phase-averaged cross-flow turbine experimental data as
             % processed via v4PostProcess, parses quantities relevant to
             % blockage corrections and returns as a structure whose fields
@@ -178,8 +178,8 @@ classdef BCTranslator < BCBase
             % Inputs
             % tdp          - Phase-averaged turbine data from v4PostProcess
             % fds          - Time-averaged flow data from v4PostProcess
-            % d0FSTInd     - Column of fds.FST to use as representative of the
-            %                undisturbed free surface, d0, for blockage correction
+            % hFSTInd     - Column of fds.FST to use as representative of the
+            %                undisturbed free surface, h, for blockage correction
             %                Default: 1
             % betaFSTInd   - Column of fds.FST to use as representative of the
             %                channel blockage, beta, for blockage correction
@@ -199,7 +199,7 @@ classdef BCTranslator < BCBase
             arguments
                 tdp
                 fds
-                d0FSTInd (1,1) = 1
+                hFSTInd (1,1) = 1
                 betaFSTInd (1,1) = 1
                 phasePercInd (1,1) = 1
             end
@@ -233,7 +233,7 @@ classdef BCTranslator < BCBase
                         case 'Uinf'
                             confData(i,1).(newNames{j}) = repmat(fds.(oldNames{j})(i), nThetas, 1);
                         case 'FST'
-                            confData(i,1).(newNames{j}) = repmat(fds.(oldNames{j})(i,d0FSTInd), nThetas, 1);
+                            confData(i,1).(newNames{j}) = repmat(fds.(oldNames{j})(i,hFSTInd), nThetas, 1);
                         case 'B'
                             confData(i,1).(newNames{j}) = repmat(fds.(oldNames{j})(i,betaFSTInd), nThetas, 1);
                     end

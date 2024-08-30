@@ -1,6 +1,8 @@
 # blockage-correction
 This repository contains MATLAB scripts for applying various confined-flow linear momentum actuator disk theory (LMADT) models to turbine performance data to predict aspects of the flow field around the turbine.
 These LMADT models can be used as the basis for analytical blockage corrections, which predict turbine performance in unconfined flow from measured or simulated performance in confined flow.
+This repository was developed in support of the following manuscripts/journal articles:
+- Hunt et. al., "Experimental validation of a linear momentum and bluff-body model for high-blockage cross-flow turbine arrays", 2024. *Submitted to Journal of Fluid Mechanics*. [Preprint available on arXiv](https://doi.org/10.48550/arXiv.2408.16705).
 
 ## LMADT model classes
 Each LMADT model is implemented as a MATLAB class:

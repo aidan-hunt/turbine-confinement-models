@@ -8,10 +8,10 @@
 %
 % Linear momentum on an actuator disk in closed channel flow (parallel
 % sided-tube) is employed to solve for the following flow properties:
-%   u1      - Core wake velocity
-%   u2      - Bypass velocity
+%   uw      - Core wake velocity
+%   ub      - Bypass velocity
 %   ut      - Velocity at the turbine
-%   V0Prime - Unconfined freestream velocity
+%   UinfPrime - Unconfined freestream velocity
 % These quantities can then be used for blockage correction or blockage
 % forecasting.
 %
@@ -37,7 +37,7 @@
 % The methods above expect that confined performance data is provided as an
 % mxn structure array, conf, with the following fields:
 %   beta (required)   - blockage ratio
-%   V0   (required)   - undisturbed upstream freestream velocity (m/s)
+%   Uinf   (required)   - undisturbed upstream freestream velocity (m/s)
 %   CT   (required)   - thrust coefficient
 %   CP   (optional)   - performance coefficient
 %   CQ   (optional)   - torque coefficient
@@ -61,12 +61,12 @@ classdef BWClosedChannel < BCBase
     % class, and defines additional properties
     properties (Constant, Access=protected)
         correctionModes = {'standard', 'bluff body'} % Available blockage correction modes
-        expectedVel = {'V0Prime', 'u2'}; % Default scaling velocity for each blockage correction mode
+        expectedVel = {'UinfPrime', 'ub'}; % Default scaling velocity for each blockage correction mode
     end
 
     methods (Access = public)
         %% Main method for solving closed-channel linear momentum model
-        function [conf] = solveLMAD(bw, conf, u2u1Guess)
+        function [conf] = solveLMAD(bw, conf, ubuwGuess)
             % Solves linear momentum on an actuator disk using a
             % closed-channel model. Velocities are estimated using
             % Equations 20-23 from Ross and Polagye (2020).
@@ -74,17 +74,17 @@ classdef BWClosedChannel < BCBase
             % Inputs
             %   conf      - A structure of confined performance data with fields
             %               as described in the BWClosedChannel class documentation.
-            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %   ubuwGuess - Initial guess for ub/uw for use in iteration
             %               (default: 1.4).
             % Outputs
             %   conf      - The input structure with the following fields
             %               added:
-            %               u1       - Wake velocity estimated from closed-channel LMAD
-            %               u2       - Bypass velocity estimated from closed-channel LMAD
+            %               uw       - Wake velocity estimated from closed-channel LMAD
+            %               ub       - Bypass velocity estimated from closed-channel LMAD
             %               ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %               V0Prime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               u2u1Iter - Iteration diagnostics for u2/u1
-            %               isPhys   - Results of physical validity checks on u1, u2, ut
+            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               ubuwIter - Iteration diagnostics for ub/uw
+            %               isPhys   - Results of physical validity checks on uw, ub, ut
             %
             % See also: BWClosedChannel, predictUnconfined, forecastConfined, checkPhysicalValidity
 
@@ -93,7 +93,7 @@ classdef BWClosedChannel < BCBase
             arguments
                 bw
                 conf
-                u2u1Guess (1,:) = [1.4]
+                ubuwGuess (1,:) = [1.4]
             end
 
             % Check input for correct sizing
@@ -102,19 +102,19 @@ classdef BWClosedChannel < BCBase
             for i = 1:size(conf, 1)
                 for j = 1:size(conf, 2)
 
-                    % Solve for u2u1 via iteration
-                    [u2u1, u2u1Err, u2u1ExitFlag] = bw.convergeU2U1(u2u1Guess, conf(i,j));
+                    % Solve for ubuw via iteration
+                    [ubuw, ubuwErr, ubuwExitFlag] = bw.convergeUbUw(ubuwGuess, conf(i,j));
     
                     % Compute channel velocities
-                    conf(i,j).u1 = bw.solveU1(u2u1, conf(i,j).CT, conf(i,j).V0);
-                    conf(i,j).u2 = bw.solveU2(u2u1, conf(i,j).CT, conf(i,j).V0);
-                    conf(i,j).ut = bw.solveUt(u2u1, conf(i,j).beta, conf(i,j).CT, conf(i,j).V0);
-                    conf(i,j).V0Prime = bw.solveV0Prime(conf(i,j).V0, conf(i,j).CT, conf(i,j).ut);
+                    conf(i,j).uw = bw.solveUw(ubuw, conf(i,j).CT, conf(i,j).Uinf);
+                    conf(i,j).ub = bw.solveUb(ubuw, conf(i,j).CT, conf(i,j).Uinf);
+                    conf(i,j).ut = bw.solveUt(ubuw, conf(i,j).beta, conf(i,j).CT, conf(i,j).Uinf);
+                    conf(i,j).UinfPrime = bw.solveUinfPrime(conf(i,j).Uinf, conf(i,j).CT, conf(i,j).ut);
     
-                    % Package diagnotics about u2u1 iteration
-                    [V0U1_blockage, V0U1_thrust] = bw.solveV0U1_both(u2u1, conf(i,j).beta, conf(i,j).CT);
-                    conf(i,j).u2u1Iter = bw.packageDiagnostics(u2u1, [V0U1_blockage V0U1_thrust], ...
-                                                                 u2u1Err, u2u1ExitFlag);
+                    % Package diagnotics about ubuw iteration
+                    [UinfUw_blockage, UinfUw_thrust] = bw.solveUinfUw_both(ubuw, conf(i,j).beta, conf(i,j).CT);
+                    conf(i,j).ubuwIter = bw.packageDiagnostics(ubuw, [UinfUw_blockage UinfUw_thrust], ...
+                                                                 ubuwErr, ubuwExitFlag);
     
                     % Check physical validity
                     conf(i,j).isPhys = bw.checkPhysicalValidity(conf(i,j));
@@ -123,7 +123,7 @@ classdef BWClosedChannel < BCBase
         end
 
         %% Main method for performing blockage correction
-        function [unconf, conf] = predictUnconfined(bw, conf, u2u1Guess, options)
+        function [unconf, conf] = predictUnconfined(bw, conf, ubuwGuess, options)
             % Applies closed-channel linear momentum on an actuator disk to
             % predict unconfined performance from confined performance
             % data.
@@ -131,21 +131,21 @@ classdef BWClosedChannel < BCBase
             % Inputs (required)
             %   conf      - A structure of confined performance data with fields
             %               as described in the BWClosedChannel class documentation.
-            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %   ubuwGuess - Initial guess for ub/uw for use in iteration
             %               (default: 1.4)
             % Inputs (name-value pairs)
             %   correctionType - Type of blockage correction to apply: 
-            %       "standard":   scales the confined data by the unconfined freestream velocity (V0Prime, default)
-            %       "bluff body": scales the confined data by the bypass velocity (u2)
+            %       "standard":   scales the confined data by the unconfined freestream velocity (UinfPrime, default)
+            %       "bluff body": scales the confined data by the bypass velocity (ub)
             %   overrideScalingVel - Overrides the scaling velocity used in
             %                        the blockage correction to the one specified. Allowable
-            %                        values are 'u1', 'u2', 'ut', or 'V0Prime'
+            %                        values are 'uw', 'ub', 'ut', or 'UinfPrime'
             % Outputs
             %   unconf    - A structure with the same size as the input
             %               conf structure and the following fields (if the
             %               field was not present in conf, it will not be
             %               present in unconf):
-            %               V0  - unconfined freestream velocity (equal to specified scaling velocity)
+            %               Uinf  - unconfined freestream velocity (equal to specified scaling velocity)
             %               CT  - unconfined thrust coefficient
             %               CP  - unconfined performance coefficient
             %               CQ  - unconfined torque coefficient
@@ -156,12 +156,12 @@ classdef BWClosedChannel < BCBase
             %                          velocity and unconfined freestream velocity.
             %   conf      - The input structure with the following fields
             %               added:
-            %               u1       - Wake velocity estimated from closed-channel LMAD
-            %               u2       - Bypass velocity estimated from closed-channel LMAD
+            %               uw       - Wake velocity estimated from closed-channel LMAD
+            %               ub       - Bypass velocity estimated from closed-channel LMAD
             %               ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %               V0Prime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               u2u1Iter - Iteration diagnostics for u2/u1
-            %               isPhys   - Results of physical validity checks on u1, u2, ut
+            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               ubuwIter - Iteration diagnostics for ub/uw
+            %               isPhys   - Results of physical validity checks on uw, ub, ut
             %
             % See also: BWClosedChannel, solveLMAD, forecastConfined, checkPhysicalValidity
 
@@ -170,13 +170,13 @@ classdef BWClosedChannel < BCBase
             arguments
                 bw
                 conf
-                u2u1Guess (1,:) = [1.4]
+                ubuwGuess (1,:) = [1.4]
                 options.correctionType {mustBeText, ismember(options.correctionType, {'standard', 'bluff body'})} = 'standard'
-                options.scalingVelOverride {mustBeText, ismember(options.scalingVelOverride, {'', 'u1', 'u2', 'ut', 'V0Prime'})} = ''
+                options.scalingVelOverride {mustBeText, ismember(options.scalingVelOverride, {'', 'uw', 'ub', 'ut', 'UinfPrime'})} = ''
             end
 
             % Apply closed channel linear momentum model
-            conf = bw.solveLMAD(conf, u2u1Guess);
+            conf = bw.solveLMAD(conf, ubuwGuess);
 
             % Convert to unconfined using the appropriate (or requested)
             % scaling velocity
@@ -221,7 +221,7 @@ classdef BWClosedChannel < BCBase
         end
 
         %% Main method for performing a bluff-body analytical blockage forecasting
-        function [conf_2, conf_1] = forecastConfined(bw, conf_1, beta_2, u2u1Guess)
+        function [conf_2, conf_1] = forecastConfined(bw, conf_1, beta_2, ubuwGuess)
             % Uses a closed-channel bluff-body blockage correction to
             % forecast performance at blockage 2 using performance data at
             % blockage 1. The forecast is performed using an analytical
@@ -234,19 +234,19 @@ classdef BWClosedChannel < BCBase
             %               as described in the BWClosedChannel class documentation.
             %   beta_2    - The target blockage at which forecasted
             %               performance data is desired, as a fraction.
-            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %   ubuwGuess - Initial guess for ub/uw for use in iteration
             %               (default: 1.4)
             % Outputs
             %   conf_2    - A structure with the same size and fields as
             %               output conf_1, but with each field corresponding to
             %               the forecasted performance and velocities at beta_2. 
             %   conf_1    - The input structure with the following fields added:
-            %               u1       - Wake velocity estimated from closed-channel LMAD
-            %               u2       - Bypass velocity estimated from closed-channel LMAD
+            %               uw       - Wake velocity estimated from closed-channel LMAD
+            %               ub       - Bypass velocity estimated from closed-channel LMAD
             %               ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %               V0Prime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               u2u1Iter - Iteration diagnostics for u2/u1
-            %               isPhys   - Results of physical validity checks on u1, u2, ut
+            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               ubuwIter - Iteration diagnostics for ub/uw
+            %               isPhys   - Results of physical validity checks on uw, ub, ut
             %
             % See also: BWClosedChannel, solveLMAD, predictUnconfined, checkPhysicalValidity
 
@@ -256,38 +256,38 @@ classdef BWClosedChannel < BCBase
                 bw
                 conf_1
                 beta_2 (1,1)
-                u2u1Guess (1,:) = [1.4]
+                ubuwGuess (1,:) = [1.4]
             end
 
             % Solve closed-channel LMAD at confinement 1
-            conf_1 = bw.solveLMAD(conf_1, u2u1Guess);
+            conf_1 = bw.solveLMAD(conf_1, ubuwGuess);
 
             for i = 1:size(conf_1, 1) % For each row of input data
                 for j = 1:size(conf_1, 2) % For each column of input data
 
                     % Now, assume:
-                    % Bypass velocity is the same at both blockages: u2_1 = u2_2
-                    % Rotor thrust is the same at both blockages: CT_1*(V0_1)^2 = CT_2*(V0_2)^2
-                    % Therefore, solve for u1 using Equation 23
-                    % This *should* be the same as conf_1(i,j).u1
-                    u1_2 = bw.solveU1_direct(conf_1(i,j).u2, conf_1(i,j).CT, conf_1(i,j).V0);
+                    % Bypass velocity is the same at both blockages: ub_1 = ub_2
+                    % Rotor thrust is the same at both blockages: CT_1*(Uinf_1)^2 = CT_2*(Uinf_2)^2
+                    % Therefore, solve for uw using Equation 23
+                    % This *should* be the same as conf_1(i,j).uw
+                    uw_2 = bw.solveUw_direct(conf_1(i,j).ub, conf_1(i,j).CT, conf_1(i,j).Uinf);
 
-                    % Solve for ut via known u1_2, u2_2, beta_2
-                    ut_2 = bw.solveUt_direct(u1_2, conf_1(i,j).u2, beta_2);
+                    % Solve for ut via known uw_2, ub_2, beta_2
+                    ut_2 = bw.solveUt_direct(uw_2, conf_1(i,j).ub, beta_2);
 
-                    % Solve for V0 with known u1_2, u2_2, ut_2, beta_2
-                    V0_2 = bw.solveV0_direct(u1_2, conf_1(i,j).u2, ut_2, beta_2);
+                    % Solve for Uinf with known uw_2, ub_2, ut_2, beta_2
+                    Uinf_2 = bw.solveUinf_direct(uw_2, conf_1(i,j).ub, ut_2, beta_2);
 
-                    % Scale conf_1 by V0_2
-                    currForecast = bw.convertConfToUnconf(conf_1(i,j), V0_2);
+                    % Scale conf_1 by Uinf_2
+                    currForecast = bw.convertConfToUnconf(conf_1(i,j), Uinf_2);
 
-                    % Set d0 to avoid errors
-                    currForecast.d0 = NaN .* ones(size(currForecast.V0));
-                    currForecast.beta = beta_2 .* ones(size(currForecast.V0));
+                    % Set h to avoid errors
+                    currForecast.h = NaN .* ones(size(currForecast.Uinf));
+                    currForecast.beta = beta_2 .* ones(size(currForecast.Uinf));
  
                     % Send this back through LMAD to get velocities and
                     % check
-                    currForecast = bw.solveLMAD(currForecast, u2u1Guess);
+                    currForecast = bw.solveLMAD(currForecast, ubuwGuess);
 
                     % Save
                     conf_2(i,j) = currForecast;
@@ -300,132 +300,132 @@ classdef BWClosedChannel < BCBase
         %% Core Equations from Ross and Polagye
         
         % Ross and Polagye Equation 21
-        function utu1 = solveUtU1(u2u1, beta)
+        function utuw = solveUtUw(ubuw, beta)
             % Ross and Polagye (2020) Equation 21
             % Solves for the ratio between the velocity at the turbine and the velocity
             % of the core flow using Barnsley and Wellicome's method.
             % Inputs:
             %   beta - blockage ratio
-            %   u2u1 - ratio between u2 (bypass velocity) and u1 (core wake velocity)
+            %   ubuw - ratio between ub (bypass velocity) and uw (core wake velocity)
             % Outputs:
-            %   utu1 - ratio between ut (velocity at turbine) and u1 (core flow 
+            %   utuw - ratio between ut (velocity at turbine) and uw (core flow 
             %          downstream of turbine)
-            utu1 = (-1 + sqrt(1 + beta .* (u2u1.^2 - 1))) ./ (beta .* (u2u1 - 1));
+            utuw = (-1 + sqrt(1 + beta .* (ubuw.^2 - 1))) ./ (beta .* (ubuw - 1));
         end
         
         % Ross and Polagye Equation 22
-        function V0u1 = solveV0U1_blockage(u2u1, beta, utu1)
+        function Uinfuw = solveUinfUw_blockage(ubuw, beta, utuw)
             % Ross and Polagye (2020) Equation 22
             % Solves for the ratio between the freestream velocity and the
             % core flow using Barnsley and Wellicome's method, via a
             % relationship with blockage.
             % Inputs:
-            %   u2u1 - ratio between u2 (bypass velocity) and u1 (core wake velocity)
+            %   ubuw - ratio between ub (bypass velocity) and uw (core wake velocity)
             %   beta - blockage
-            %   utu1 - ratio between ut (velocity at turbine) and u1 (core wake velocity)
+            %   utuw - ratio between ut (velocity at turbine) and uw (core wake velocity)
             % Outputs:
-            %   V0u1 - ratio between V0 (freestream velocity upstream of turbine) and 
-            %          u1 (core wake velocity)
-            V0u1 = u2u1 - beta .* utu1 .* (u2u1 - 1);
+            %   Uinfuw - ratio between Uinf (freestream velocity upstream of turbine) and 
+            %          uw (core wake velocity)
+            Uinfuw = ubuw - beta .* utuw .* (ubuw - 1);
         end
         
         % Ross and Polagye Equation 23
-        function V0u1 = solveV0U1_thrust(u2u1, CT)
+        function Uinfuw = solveUinfUw_thrust(ubuw, CT)
             % Ross and Polagye (2020) Equation 23
             % Solves for the ratio between the freestream velocity and the
             % core flow using Barnsley and Wellicome's method, via a
             % relationship with thrust
             % Inputs:
-            %   u2u1 - ratio between u2 (bypass flow) and u1 (core flow)
+            %   ubuw - ratio between ub (bypass flow) and uw (core flow)
             %   CT   - thrust coefficient
             % Outputs:
-            %   V0u1 - ratio between V0 (freestream velocity upstream of turbine) and 
-            %          u1 (core flow downstream of turbine)
-            V0u1 = sqrt((u2u1.^2 - 1) ./ CT);
+            %   Uinfuw - ratio between Uinf (freestream velocity upstream of turbine) and 
+            %          uw (core flow downstream of turbine)
+            Uinfuw = sqrt((ubuw.^2 - 1) ./ CT);
         end
 
         %% Different forms of Ross and Polagye equations for solving for specific velocities
 
-        function ut = solveUt(u2u1, beta, CT, V0)
+        function ut = solveUt(ubuw, beta, CT, Uinf)
             % Using Ross and Polagye (2020) Equations 21 and 23 and a known
-            % u2u1, CT, and V0, solves for ut, the velocity at the turbine
-            utu1 = BWClosedChannel.solveUtU1(u2u1, beta);
-            u1 = BWClosedChannel.solveU1(u2u1, CT, V0);
-            ut = utu1 .* u1;
+            % ubuw, CT, and Uinf, solves for ut, the velocity at the turbine
+            utuw = BWClosedChannel.solveUtUw(ubuw, beta);
+            uw = BWClosedChannel.solveUw(ubuw, CT, Uinf);
+            ut = utuw .* uw;
         end
 
-        function u1 = solveU1(u2u1, CT, V0)
-            % Using Ross and Polagye Equation 23 and a known u2u1, CT, and
-            % V0, solve for u1
-            V0U1 = BWClosedChannel.solveV0U1_thrust(u2u1, CT);
-            u1 = V0 ./ V0U1;
+        function uw = solveUw(ubuw, CT, Uinf)
+            % Using Ross and Polagye Equation 23 and a known ubuw, CT, and
+            % Uinf, solve for uw
+            UinfUw = BWClosedChannel.solveUinfUw_thrust(ubuw, CT);
+            uw = Uinf ./ UinfUw;
         end
 
-        function u2 = solveU2(u2u1, CT, V0)
-            % Using Ross and Polagye Equation 23 and a known u2u1, CT, and V0,
-            % solves for u2, the bypass velocity.
-            V0U1 = BWClosedChannel.solveV0U1_thrust(u2u1, CT);
-            u2 = u2u1 ./ V0U1 .* V0;
+        function ub = solveUb(ubuw, CT, Uinf)
+            % Using Ross and Polagye Equation 23 and a known ubuw, CT, and Uinf,
+            % solves for ub, the bypass velocity.
+            UinfUw = BWClosedChannel.solveUinfUw_thrust(ubuw, CT);
+            ub = ubuw ./ UinfUw .* Uinf;
         end
 
         % (Ross and Polagye (2020) EQ 20).
-        function V0Prime = solveV0Prime(V0, CT, ut)
+        function UinfPrime = solveUinfPrime(Uinf, CT, ut)
             % Solves for the unconfined freestream velocity using linear
             % momentum theory (Ross and Polagye (2020) EQ 20).
             % Inputs:
-            % V0 - Undisturbed freestream velocity at confined condition
+            % Uinf - Undisturbed freestream velocity at confined condition
             % CT - Thrust coefficient at confined condition
             % ut - Velocity at the turbine (common between confined and
             %      unconfined condition)
             % Outputs:
-            % V0Prime - The undisturbed freestream velocity at the unconfined
+            % UinfPrime - The undisturbed freestream velocity at the unconfined
             %           condition
-            V0Prime = V0 .* (CT./4+(ut./V0).^2)./(ut./V0);
+            UinfPrime = Uinf .* (CT./4+(ut./Uinf).^2)./(ut./Uinf);
         end
 
         %% Core equations rearranged for analytical forecasting
 
-        function u1 = solveU1_direct(u2, CT, V0)
-            % Rearranged Ross and Polagye Eq 23: Given a known u2, CT and
-            % V0, solve for u1.
-            u1 = sqrt(u2.^2 - CT .* V0.^2);
+        function uw = solveUw_direct(ub, CT, Uinf)
+            % Rearranged Ross and Polagye Eq 23: Given a known ub, CT and
+            % Uinf, solve for uw.
+            uw = sqrt(ub.^2 - CT .* Uinf.^2);
         end
 
 
-        function ut = solveUt_direct(u1, u2, beta)
-            % Rearranged Ross and Polagye Equation 21: Given a known u1,
-            % u2, and beta, calculates ut.
-            u2u1 = u2 ./ u1;
-            ut = u1 .* BWClosedChannel.solveUtU1(u2u1, beta);
+        function ut = solveUt_direct(uw, ub, beta)
+            % Rearranged Ross and Polagye Equation 21: Given a known uw,
+            % ub, and beta, calculates ut.
+            ubuw = ub ./ uw;
+            ut = uw .* BWClosedChannel.solveUtUw(ubuw, beta);
         end
 
-        function V0 = solveV0_direct(u1, u2, ut, beta)
-            % Rearranged Ross and Polagye Equation 22: Given a known u1,
-            % u2, ut, and beta, solve for V0.
-            u2u1 = u2 ./ u1;
-            utu1 = ut ./ u1;
-            V0 = u1 .* BWClosedChannel.solveV0U1_blockage(u2u1, beta, utu1);
+        function Uinf = solveUinf_direct(uw, ub, ut, beta)
+            % Rearranged Ross and Polagye Equation 22: Given a known uw,
+            % ub, ut, and beta, solve for Uinf.
+            ubuw = ub ./ uw;
+            utuw = ut ./ uw;
+            Uinf = uw .* BWClosedChannel.solveUinfUw_blockage(ubuw, beta, utuw);
         end
 
-        %% Iteration scheme for solving for u2/u1, ut, and u2 via Ross and Polagye EQs 21-23
+        %% Iteration scheme for solving for ub/uw, ut, and ub via Ross and Polagye EQs 21-23
         
-        function [u2u1, err, exitFlag] = convergeU2U1(u2u1Guess, conf)
-            % Using Ross and Polagye Equations 21-23, iterates to find u2/u1 that
-            % satisfies both EQ 22 and EQ 23, and returns that u2/u1.
+        function [ubuw, err, exitFlag] = convergeUbUw(ubuwGuess, conf)
+            % Using Ross and Polagye Equations 21-23, iterates to find ub/uw that
+            % satisfies both EQ 22 and EQ 23, and returns that ub/uw.
             % Inputs:
-            %   u2u1Guess - Initial guess for u2/u1 for use in iteration
+            %   ubuwGuess - Initial guess for ub/uw for use in iteration
             %               (default: 1.4)            
             %   conf      - Confined performance data as described in class
             %               documentation
             % Outputs:
-            %   u2u1 - Value of u2u1 that satisfies both EQ 22 and EQ 23
+            %   ubuw - Value of ubuw that satisfies both EQ 22 and EQ 23
             %           (scalar)
             %   err  - Error between EQ 22 and EQ 23 at convergence
             %   exitFlag - Exit condition at convergence
 
             % Preallocate
             nPoints = length(conf.CT);
-            u2u1 = zeros(size(conf.CT));
+            ubuw = zeros(size(conf.CT));
             err = zeros(size(conf.CT));
             exitFlag = zeros(size(conf.CT));
 
@@ -433,39 +433,39 @@ classdef BWClosedChannel < BCBase
             for k = 1:nPoints
 
                 % If good point, proceed
-                if all(~isnan(u2u1Guess)) && (conf.CT(k) >= 0)
-                    currFun = @(u2u1) BWClosedChannel.u2u1Compare(u2u1, conf.beta(k), conf.CT(k));
-                    % [u2u1(k), err(k), exitFlag(k)] = fzero(currFun, u2u1Guess);
-                    [u2u1(k), err(k), exitFlag(k)] = fminsearch(currFun, u2u1Guess);
+                if all(~isnan(ubuwGuess)) && (conf.CT(k) >= 0)
+                    currFun = @(ubuw) BWClosedChannel.ubuwCompare(ubuw, conf.beta(k), conf.CT(k));
+                    % [ubuw(k), err(k), exitFlag(k)] = fzero(currFun, ubuwGuess);
+                    [ubuw(k), err(k), exitFlag(k)] = fminsearch(currFun, ubuwGuess);
                 else
-                    warning('Negative CT value or bad u2u1Guess: skipping application of LMAD for this point');
-                    u2u1(k) = nan;
+                    warning('Negative CT value or bad ubuwGuess: skipping application of LMAD for this point');
+                    ubuw(k) = nan;
                     err(k) = nan;
                     exitFlag(k) = nan;
                 end
             end
         end
 
-        function [V0U1_blockage, V0U1_thrust] = solveV0U1_both(u2u1, beta, CT)
-            % Calculates the ratio between V0 and u1 via Ross and Polagye EQs
+        function [UinfUw_blockage, UinfUw_thrust] = solveUinfUw_both(ubuw, beta, CT)
+            % Calculates the ratio between Uinf and uw via Ross and Polagye EQs
             % 21/22, as well as Ross and Polagye EQ 23, and returns both
             % values.
-            utu1 = BWClosedChannel.solveUtU1(u2u1, beta); % Use guess for u2/u1 to solve for ut/u1
-            V0U1_blockage = BWClosedChannel.solveV0U1_blockage(u2u1, beta, utu1); % Solve for V0/u1 one way
-            V0U1_thrust = BWClosedChannel.solveV0U1_thrust(u2u1, CT); % Solve for V0/u1 another way
+            utuw = BWClosedChannel.solveUtUw(ubuw, beta); % Use guess for ub/uw to solve for ut/uw
+            UinfUw_blockage = BWClosedChannel.solveUinfUw_blockage(ubuw, beta, utuw); % Solve for Uinf/uw one way
+            UinfUw_thrust = BWClosedChannel.solveUinfUw_thrust(ubuw, CT); % Solve for Uinf/uw another way
         end
 
-        function err = u2u1Compare(u2u1Guess, beta, CT)
-            % Calculates the ratio between V0 and u1 via Ross and Polagye EQs
+        function err = ubuwCompare(ubuwGuess, beta, CT)
+            % Calculates the ratio between Uinf and uw via Ross and Polagye EQs
             % 21/22, as well as Ross and Polagye EQ 23, and returns the error
             % between the two methods.
-            [V0U1_blockage, V0U1_thrust] = BWClosedChannel.solveV0U1_both(u2u1Guess, beta, CT);
+            [UinfUw_blockage, UinfUw_thrust] = BWClosedChannel.solveUinfUw_both(ubuwGuess, beta, CT);
 
             % Fzero error
-            % err = V0U1_blockage - V0U1_thrust; % Compute error between those values
+            % err = UinfUw_blockage - UinfUw_thrust; % Compute error between those values
 
             % Fminsearch error
-            err = abs(V0U1_blockage - V0U1_thrust); % Compute error between those values
+            err = abs(UinfUw_blockage - UinfUw_thrust); % Compute error between those values
         end
 
         %% Analytical forecasting - error analysis
@@ -482,7 +482,7 @@ classdef BWClosedChannel < BCBase
             %                    the elements of confPredict and
             %                    confReference. Error is evaluated for the
             %                    following fields, if present in both
-            %                    structures: CP, CT, CL, CF, CQ, V0.
+            %                    structures: CP, CT, CL, CF, CQ, Uinf.
             arguments
                 confPredict
                 confReference
@@ -491,7 +491,7 @@ classdef BWClosedChannel < BCBase
             end
 
             forecastErr = struct;
-            predictMetrics = {'CP', 'CT', 'CL', 'CF', 'CQ', 'V0'}; % Meaningful metrics for quantifying error
+            predictMetrics = {'CP', 'CT', 'CL', 'CF', 'CQ', 'Uinf'}; % Meaningful metrics for quantifying error
 
             for j = 1:size(confPredict, 2) % For each forecast blockage
                 % Get the current TSR
@@ -529,23 +529,23 @@ classdef BWClosedChannel < BCBase
 
         %% Diagnostics
 
-        function [err, ax] = plotU2U1ConvergenceRegion(u2u1Test, beta, CT)
-            % Plots the error between the two methods for calculating V0/u1
-            % (used in u2u1 iteration) for a specific beta and CT. Useful for
+        function [err, ax] = plotUbUwConvergenceRegion(ubuwTest, beta, CT)
+            % Plots the error between the two methods for calculating Uinf/uw
+            % (used in ubuw iteration) for a specific beta and CT. Useful for
             % visually determining whether a given point can ever converge.
-            if (isempty(u2u1Test))
-                u2u1Test = 0:0.01:10;
+            if (isempty(ubuwTest))
+                ubuwTest = 0:0.01:10;
             end
-            % Generate test values for u2u1 and evaluate error for each
-            err = BWClosedChannel.u2u1Compare(u2u1Test, beta, CT);
+            % Generate test values for ubuw and evaluate error for each
+            err = BWClosedChannel.ubuwCompare(ubuwTest, beta, CT);
 
             % Plot
             [fig] = figure();
             ax = axes(fig);
             grid(ax, 'on'); hold(ax, 'on');
-            plot(ax, u2u1Test, zeros(size(u2u1Test)), '-k');
-            plot(ax, u2u1Test, real(err), '-', 'marker', '.');
-            plot(ax, u2u1Test, imag(err), '-', 'marker', '.');
+            plot(ax, ubuwTest, zeros(size(ubuwTest)), '-k');
+            plot(ax, ubuwTest, real(err), '-', 'marker', '.');
+            plot(ax, ubuwTest, imag(err), '-', 'marker', '.');
             xlabel(ax, '$u_2$');
             ylabel(ax, '$u_1$ error');
         end

@@ -13,10 +13,10 @@
 %
 % Open-channel linear momentum on an actuator disk is used to solve for the
 % following properties:
-%   u1      - Core wake velocity
-%   u2      - Bypass velocity
+%   uw      - Core wake velocity
+%   ub      - Bypass velocity
 %   ut      - Velocity at the turbine
-%   V0Prime - Unconfined freestream velocity
+%   UinfPrime - Unconfined freestream velocity
 %   Fr      - Depth-based Froude number
 %   dhToh   - Free-surface drop across the turbine rotor normalized by
 %             upstream depth
@@ -50,8 +50,8 @@
 % The methods above expect that confined performance data is provided as an
 % mxn structure array, conf, with the following fields:
 %   beta (required)   - blockage ratio
-%   V0   (required)   - undisturbed upstream freestream velocity (m/s)
-%   d0   (required)   - undisturbed upstream water depth (m)
+%   Uinf   (required)   - undisturbed upstream freestream velocity (m/s)
+%   h   (required)   - undisturbed upstream water depth (m)
 %   CT   (required)   - thrust coefficient
 %   CP   (optional)   - performance coefficient
 %   CQ   (optional)   - torque coefficient
@@ -96,9 +96,9 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Inputs (optional, name-value pairs)
             %   guessMode - The linear momentum velocities (or ratio
             %               between velocities) represented by uGuess:
-            %       'u2u1': ratio between u2 and u1 (default)
-            %       'u2V0': ratio between u2 and V0
-            %       'u2': the bypass velocity
+            %       'ubuw': ratio between ub and uw (default)
+            %       'ubUinf': ratio between ub and Uinf
+            %       'ub': the bypass velocity
             %   FrZeroLimit - Whether to evaluate linear momentum at the
             %                 closed-channel limit (Fr=0), ignoring the
             %                 provided Froude number. Default: false.
@@ -107,13 +107,13 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %               added:
             %               Fr       - Depth-based Froude number (rectangular channel assumed)
             %               dhToh    - Normalized free-surface drop across the rotor
-            %               u1       - Wake velocity estimated from closed-channel LMAD
-            %               u2       - Bypass velocity estimated from closed-channel LMAD
+            %               uw       - Wake velocity estimated from closed-channel LMAD
+            %               ub       - Bypass velocity estimated from closed-channel LMAD
             %               ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %               V0Prime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               u2u1Iter - Iteration diagnostics for u2/u1
-            %               u2Iter   - Iteration diagnostics for u2
-            %               isPhys   - Results of physical validity checks on u1, u2, ut
+            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               ubuwIter - Iteration diagnostics for ub/uw
+            %               ubIter   - Iteration diagnostics for ub
+            %               isPhys   - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, predictUnconfined, forecastConfined, checkPhysicalValidity
 
@@ -123,7 +123,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 hb
                 conf
                 uGuess (1,1) = [1.04]
-                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
+                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'ub', 'ubuw', 'ubUinf'})} = 'ubuw'
                 options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
             end
 
@@ -141,47 +141,47 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
 
                     % Calculate Froude numbers
-                    conf(i,j).Fr = hb.calcFroude(conf(i,j).V0, conf(i,j).d0);
+                    conf(i,j).Fr = hb.calcFroude(conf(i,j).Uinf, conf(i,j).h);
 
-                    % If u2 guess is not provided, use closed channel LMAD to generate reasonable u2 guess from a u2u1 guess.
+                    % If ub guess is not provided, use closed channel LMAD to generate reasonable ub guess from a ubuw guess.
                     switch options.guessMode
-                        case 'u2u1'
-                            [u2u1, u2u1Err, u2u1ExitFlag] = hb.convergeU2U1(uGuess, conf(i,j));
-                            u2Guess = hb.solveU2(u2u1, conf(i,j).CT, conf(i,j).V0);
-                        case 'u2V0'
-                            u2Guess = uGuess .* conf(i,j).V0;
-                        case 'u2'
-                            u2Guess = uGuess;
+                        case 'ubuw'
+                            [ubuw, ubuwErr, ubuwExitFlag] = hb.convergeUbUw(uGuess, conf(i,j));
+                            ubGuess = hb.solveUb(ubuw, conf(i,j).CT, conf(i,j).Uinf);
+                        case 'ubUinf'
+                            ubGuess = uGuess .* conf(i,j).Uinf;
+                        case 'ub'
+                            ubGuess = uGuess;
                     end
     
-                    % Iterate on Ross and Polagye EQs 43 and 44 to find value of u2 that solves for both.
-                    [u2, u2Err, u2ExitFlag] = hb.convergeU2(u2Guess, conf(i,j));
+                    % Iterate on Ross and Polagye EQs 43 and 44 to find value of ub that solves for both.
+                    [ub, ubErr, ubExitFlag] = hb.convergeUb(ubGuess, conf(i,j));
     
                     % Solve for velocities
-                    conf(i,j).u1 = hb.solveU1_Thrust(u2, conf(i,j).CT, conf(i,j).V0);
-                    conf(i,j).u2 = u2;
-                    conf(i,j).ut = hb.solveUt(conf(i,j).u1, conf(i,j).u2, conf(i,j).d0, conf(i,j).V0, conf(i,j).beta);
-                    conf(i,j).V0Prime = hb.solveV0Prime(conf(i,j).V0, conf(i,j).CT, conf(i,j).ut);
+                    conf(i,j).uw = hb.solveUw_Thrust(ub, conf(i,j).CT, conf(i,j).Uinf);
+                    conf(i,j).ub = ub;
+                    conf(i,j).ut = hb.solveUt(conf(i,j).uw, conf(i,j).ub, conf(i,j).h, conf(i,j).Uinf, conf(i,j).beta);
+                    conf(i,j).UinfPrime = hb.solveUinfPrime(conf(i,j).Uinf, conf(i,j).CT, conf(i,j).ut);
 
                     % Solve for depths
-                    conf(i,j).hBypass = hb.calcBypassDepth(conf(i,j).d0, conf(i,j).V0, conf(i,j).u2);
-                    conf(i,j).hdUp = hb.calcUpstreamDiskDepth(conf(i,j).d0, conf(i,j).V0, conf(i,j).ut);
-                    conf(i,j).hdDown = hb.calcDownstreamDiskDepth(conf(i,j).hBypass, conf(i,j).ut, conf(i,j).u1);
-                    conf(i,j).dhDisk = hb.calcDiskDrop(conf(i,j).V0, conf(i,j).CT);
+                    conf(i,j).hBypass = hb.calcBypassDepth(conf(i,j).h, conf(i,j).Uinf, conf(i,j).ub);
+                    conf(i,j).hdUp = hb.calcUpstreamDiskDepth(conf(i,j).h, conf(i,j).Uinf, conf(i,j).ut);
+                    conf(i,j).hdDown = hb.calcDownstreamDiskDepth(conf(i,j).hBypass, conf(i,j).ut, conf(i,j).uw);
+                    conf(i,j).dhDisk = hb.calcDiskDrop(conf(i,j).Uinf, conf(i,j).CT);
                     [conf(i,j).dhToh] = hb.calcTotalSurfaceDeformation(conf(i,j).CT, conf(i,j).beta, conf(i,j).Fr);
-                    conf(i,j).hFinal = conf(i,j).d0 .* (1 - conf(i,j).dhToh);
+                    conf(i,j).hFinal = conf(i,j).h .* (1 - conf(i,j).dhToh);
 
-                    % Package diagnostics about u2u1 iteration
-                    if strcmp(options.guessMode, 'u2u1')
-                        [V0U1_blockage, V0U1_thrust] = hb.solveV0U1_both(u2u1, conf(i,j).beta, conf(i,j).CT);
-                        conf(i,j).u2u1Iter = hb.packageDiagnostics(u2u1, [V0U1_blockage, V0U1_thrust], ...
-                                                                     u2u1Err, u2u1ExitFlag);
+                    % Package diagnostics about ubuw iteration
+                    if strcmp(options.guessMode, 'ubuw')
+                        [UinfUw_blockage, UinfUw_thrust] = hb.solveUinfUw_both(ubuw, conf(i,j).beta, conf(i,j).CT);
+                        conf(i,j).ubuwIter = hb.packageDiagnostics(ubuw, [UinfUw_blockage, UinfUw_thrust], ...
+                                                                     ubuwErr, ubuwExitFlag);
                     end
 
-                    % Package diagnostics about u2 iteration
-                    [u1_Fr, u1_Thrust] = hb.solveU1_both(conf(i,j).u2, conf(i,j).beta, conf(i,j).CT, conf(i,j).V0, conf(i,j).Fr);
-                    conf(i,j).u2Iter = hb.packageDiagnostics(conf(i,j).u2, [u1_Fr, u1_Thrust], ...
-                                                               u2Err, u2ExitFlag);
+                    % Package diagnostics about ub iteration
+                    [uw_Fr, uw_Thrust] = hb.solveUw_both(conf(i,j).ub, conf(i,j).beta, conf(i,j).CT, conf(i,j).Uinf, conf(i,j).Fr);
+                    conf(i,j).ubIter = hb.packageDiagnostics(conf(i,j).ub, [uw_Fr, uw_Thrust], ...
+                                                               ubErr, ubExitFlag);
 
                     % Check physical validity
                     conf(i,j).isPhys = hb.checkPhysicalValidity(conf(i,j));
@@ -210,24 +210,24 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Inputs (optional, name-value pairs)
             %   guessMode - The linear momentum velocities (or ratio
             %               between velocities) represented by uGuess:
-            %       'u2u1': ratio between u2 and u1 (default)
-            %       'u2V0': ratio between u2 and V0
-            %       'u2': the bypass velocity
+            %       'ubuw': ratio between ub and uw (default)
+            %       'ubUinf': ratio between ub and Uinf
+            %       'ub': the bypass velocity
             %   FrZeroLimit - Whether to evaluate linear momentum at the
             %                 closed-channel limit (Fr=0), ignoring the
             %                 provided Froude number. Default: false.
             %   correctionType    - Type of blockage correction to apply: 
-            %       "standard":     scales the confined data by the unconfined freestream velocity (V0Prime, default)
-            %       "bluff body":   scales the confined data by the bypass velocity (u2)
+            %       "standard":     scales the confined data by the unconfined freestream velocity (UinfPrime, default)
+            %       "bluff body":   scales the confined data by the bypass velocity (ub)
             %   overrideScalingVel - Overrides the scaling velocity used in
             %                        the blockage correction to the one specified. Allowable
-            %                        values are 'u1', 'u2', 'ut', or 'V0Prime'
+            %                        values are 'uw', 'ub', 'ut', or 'UinfPrime'
             % Outputs
             %   unconf    - A structure with the same size as the input
             %               conf structure and the following fields (if the
             %               field was not present in conf, it will not be
             %               present in unconf):
-            %               V0  - unconfined freestream velocity (equal to specified scaling velocity)
+            %               Uinf  - unconfined freestream velocity (equal to specified scaling velocity)
             %               CT  - unconfined thrust coefficient
             %               CP  - unconfined performance coefficient
             %               CQ  - unconfined torque coefficient
@@ -240,13 +240,13 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %               added:
             %               Fr       - Depth-based Froude number (rectangular channel assumed)
             %               dhToh    - Normalized free-surface drop across the rotor
-            %               u1       - Wake velocity estimated from closed-channel LMAD
-            %               u2       - Bypass velocity estimated from closed-channel LMAD
+            %               uw       - Wake velocity estimated from closed-channel LMAD
+            %               ub       - Bypass velocity estimated from closed-channel LMAD
             %               ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %               V0Prime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               u2u1Iter - Iteration diagnostics for u2/u1
-            %               u2Iter   - Iteration diagnostics for u2
-            %               isPhys   - Results of physical validity checks on u1, u2, ut
+            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               ubuwIter - Iteration diagnostics for ub/uw
+            %               ubIter   - Iteration diagnostics for ub
+            %               isPhys   - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, solveLMAD, forecastConfined, checkPhysicalValidity
     
@@ -256,10 +256,10 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 hb
                 conf
                 uGuess (1,1) = [1.4]
-                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
+                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'ub', 'ubuw', 'ubUinf'})} = 'ubuw'
                 options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
                 options.correctionType {mustBeText, ismember(options.correctionType, {'standard', 'bluff body'})} = 'standard'
-                options.scalingVelOverride {mustBeText, ismember(options.scalingVelOverride, {'', 'u1', 'u2', 'ut', 'V0Prime'})} = ''
+                options.scalingVelOverride {mustBeText, ismember(options.scalingVelOverride, {'', 'uw', 'ub', 'ut', 'UinfPrime'})} = ''
             end
 
             % If considering the limiting closed-channel case
@@ -304,18 +304,18 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Inputs (optional, name-value pairs)
             %   guessMode - The linear momentum velocities (or ratio
             %               between velocities) represented by uGuess:
-            %       'u2u1': ratio between u2 and u1 (default)
-            %       'u2V0': ratio between u2 and V0
-            %       'u2': the bypass velocity
+            %       'ubuw': ratio between ub and uw (default)
+            %       'ubUinf': ratio between ub and Uinf
+            %       'ub': the bypass velocity
             %   FrZeroLimit - Whether to evaluate linear momentum at the
             %                 closed-channel limit (Fr=0), ignoring the
             %                 provided Froude number. Default: false.
             %   constantFr - Whether to hold the Froude number constant
             %                between beta_1 and beta_2 (true, default) or allow to
-            %                vary (false). If constantFr=true, d0 at beta_2
-            %                is calculated using Fr at beta_1 and V0 at
-            %                beta_2. If constantFr=false, d0 at beta_2 is
-            %                calculated using d0 at beta_1 and assuming
+            %                vary (false). If constantFr=true, h at beta_2
+            %                is calculated using Fr at beta_1 and Uinf at
+            %                beta_2. If constantFr=false, h at beta_2 is
+            %                calculated using h at beta_1 and assuming
             %                constant channel width.
             % Outputs
             %   conf_2     - A structure with the same size and fields as
@@ -325,13 +325,13 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %                added:
             %                Fr       - Depth-based Froude number (rectangular channel assumed)
             %                dhToh    - Normalized free-surface drop across the rotor
-            %                u1       - Wake velocity estimated from closed-channel LMAD
-            %                u2       - Bypass velocity estimated from closed-channel LMAD
+            %                uw       - Wake velocity estimated from closed-channel LMAD
+            %                ub       - Bypass velocity estimated from closed-channel LMAD
             %                ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %                V0Prime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %                u2u1Iter - Iteration diagnostics for u2/u1
-            %                u2Iter   - Iteration diagnostics for u2
-            %                isPhys   - Results of physical validity checks on u1, u2, ut
+            %                UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %                ubuwIter - Iteration diagnostics for ub/uw
+            %                ubIter   - Iteration diagnostics for ub
+            %                isPhys   - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, solveLMAD, predictUnconfined, checkPhysicalValidity
 
@@ -342,7 +342,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 conf_1
                 beta_2 (1,1) {mustBeInRange(beta_2, 0, 1)}
                 uGuess (1,1) = [1.4]
-                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
+                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'ub', 'ubuw', 'ubUinf'})} = 'ubuw'
                 options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
                 options.constantFr (1,1) {mustBeNumericOrLogical} = true;
             end
@@ -362,33 +362,33 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 for i = 1:size(conf_1, 1)
                     for j = 1:size(conf_1, 2)
     
-                        % Generate V0Guess based on beta1 and beta2
-                        % V0_2Guess = conf_1(i,j).beta ./ beta_2 .* conf_1(i,j).V0;
-                        V0_2Guess = conf_1(i,j).V0; % Try to constrain V0 within reasonable values
+                        % Generate UinfGuess based on beta1 and beta2
+                        % Uinf_2Guess = conf_1(i,j).beta ./ beta_2 .* conf_1(i,j).Uinf;
+                        Uinf_2Guess = conf_1(i,j).Uinf; % Try to constrain Uinf within reasonable values
     
-                        [V0_2, V0_2Err, V0_2ExitFlag] = hb.convergeV02(V0_2Guess, beta_2, conf_1(i,j), options.constantFr);
+                        [Uinf_2, Uinf_2Err, Uinf_2ExitFlag] = hb.convergeUinf2(Uinf_2Guess, beta_2, conf_1(i,j), options.constantFr);
     
                         % Re-scale data using converged velocity
-                        currForecast = hb.convertConfToUnconf(conf_1(i,j), V0_2);
+                        currForecast = hb.convertConfToUnconf(conf_1(i,j), Uinf_2);
     
-                        % Set d0, beta to what was used.
+                        % Set h, beta to what was used.
                         if options.constantFr
-                            % Calculate d0_2 from Fr_1, V0_2
-                            currForecast.d0 = hb.calcDepthFromFroude(currForecast.V0, conf_1(i,j).Fr);
+                            % Calculate h_2 from Fr_1, Uinf_2
+                            currForecast.h = hb.calcDepthFromFroude(currForecast.Uinf, conf_1(i,j).Fr);
                         else 
                             % Recalculate scaled depth that was used in iteration
-                            currForecast.d0 = hb.calcDepthFromBlockage(conf_1(i,j).d0, conf_1(i,j).beta, beta_2);
+                            currForecast.h = hb.calcDepthFromBlockage(conf_1(i,j).h, conf_1(i,j).beta, beta_2);
                         end
-                        currForecast.Fr = hb.calcFroude(currForecast.V0, currForecast.d0);
+                        currForecast.Fr = hb.calcFroude(currForecast.Uinf, currForecast.h);
                         currForecast.beta = beta_2;
     
-                        % Package diagnostics about V0_2 iteration
-                        [u1_Fr, u1_Thrust] = hb.solveU1_both(conf_1(i,j).u2, beta_2, currForecast.CT, currForecast.V0, currForecast.Fr);
-                        currForecast.V0_2Iter = hb.packageDiagnostics(currForecast.V0, [u1_Fr, u1_Thrust], ...
-                                                                                      V0_2Err, V0_2ExitFlag);
+                        % Package diagnostics about Uinf_2 iteration
+                        [uw_Fr, uw_Thrust] = hb.solveUw_both(conf_1(i,j).ub, beta_2, currForecast.CT, currForecast.Uinf, currForecast.Fr);
+                        currForecast.Uinf_2Iter = hb.packageDiagnostics(currForecast.Uinf, [uw_Fr, uw_Thrust], ...
+                                                                                      Uinf_2Err, Uinf_2ExitFlag);
     
-                        % Send back through LMAD to get u1, u2
-                        % NOTE: This should result in the same u1, u2 as conf_1
+                        % Send back through LMAD to get uw, ub
+                        % NOTE: This should result in the same uw, ub as conf_1
                         currForecast = hb.solveLMAD(currForecast, uGuess, guessMode=options.guessMode);
     
                         % Save
@@ -420,22 +420,22 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Inputs (optional, name-value pairs)
             %   guessMode - The linear momentum velocities (or ratio
             %               between velocities) represented by uGuess:
-            %       'u2u1': ratio between u2 and u1 (default)
-            %       'u2V0': ratio between u2 and V0
-            %       'u2': the bypass velocity
+            %       'ubuw': ratio between ub and uw (default)
+            %       'ubUinf': ratio between ub and Uinf
+            %       'ub': the bypass velocity
             %   FrZeroLimit - Whether to evaluate linear momentum at the
             %                 closed-channel limit (Fr=0), ignoring the
             %                 provided Froude number. Default: false.
             %   constantFr - Whether to hold the Froude number constant
             %                between beta_1 and beta_2 (true, default) or allow to
-            %                vary (false). If constantFr=true, d0 at beta_2
-            %                is calculated using Fr at beta_1 and V0 at
-            %                beta_2. If constantFr=false, d0 at beta_2 is
-            %                calculated using d0 at beta_1 and assuming
+            %                vary (false). If constantFr=true, h at beta_2
+            %                is calculated using Fr at beta_1 and Uinf at
+            %                beta_2. If constantFr=false, h at beta_2 is
+            %                calculated using h at beta_1 and assuming
             %                constant channel width.
             %   correctionType    - Type of blockage correction to apply: 
-            %       "standard":     scales the confined data by the unconfined freestream velocity (V0Prime, default)
-            %       "bluff body":   scales the confined data by the bypass velocity (u2)
+            %       "standard":     scales the confined data by the unconfined freestream velocity (UinfPrime, default)
+            %       "bluff body":   scales the confined data by the bypass velocity (ub)
             % Outputs
             %   conf_2     - A structure with the same size and fields as
             %                output conf_1, but with each field corresponding to
@@ -444,13 +444,13 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %                added:
             %                Fr       - Depth-based Froude number (rectangular channel assumed)
             %                dhToh    - Normalized free-surface drop across the rotor
-            %                u1       - Wake velocity estimated from closed-channel LMAD
-            %                u2       - Bypass velocity estimated from closed-channel LMAD
+            %                uw       - Wake velocity estimated from closed-channel LMAD
+            %                ub       - Bypass velocity estimated from closed-channel LMAD
             %                ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %                V0Prime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %                u2u1Iter - Iteration diagnostics for u2/u1
-            %                u2Iter   - Iteration diagnostics for u2
-            %                isPhys   - Results of physical validity checks on u1, u2, ut
+            %                UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %                ubuwIter - Iteration diagnostics for ub/uw
+            %                ubIter   - Iteration diagnostics for ub
+            %                isPhys   - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, solveLMAD, predictUnconfined, checkPhysicalValidity
             arguments
@@ -458,7 +458,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                 conf_1
                 beta_2 (1,1) {mustBeInRange(beta_2, 0, 1)}
                 uGuess (1,1) = [1.4];
-                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'u2', 'u2u1', 'u2V0'})} = 'u2u1'
+                options.guessMode {mustBeText, mustBeMember(options.guessMode, {'ub', 'ubuw', 'ubUinf'})} = 'ubuw'
                 options.correctionType {mustBeText, ismember(options.correctionType, {'standard', 'bluff body'})} = 'bluff body'
                 options.FrZeroLimit (1,1) {mustBeNumericOrLogical} = false;
             end
@@ -500,75 +500,75 @@ classdef HoulsbyOpenChannel < BWClosedChannel
         %% Core Equation set: Ross and Polagye EQs 43-45
 
         % Ross and Polagye Equation 43
-        function [u1, num, den] = solveU1_Froude(u2, beta, CT, V0, Fr)
-            % Ross and Polagye Equation 43: solves for u1, the core wake
+        function [uw, num, den] = solveUw_Froude(ub, beta, CT, Uinf, Fr)
+            % Ross and Polagye Equation 43: solves for uw, the core wake
             % velocity, using a blockage-Froude relationship.
             % Inputs:
-            %   u2 - the bypass velocity (m/s)
+            %   ub - the bypass velocity (m/s)
             %   beta - the channel blockage (decimal)
             %   CT - thrust coefficient at confined condition
-            %   V0 - undisturbed freestream velocity at the confined condition (m/s)
+            %   Uinf - undisturbed freestream velocity at the confined condition (m/s)
             %   Fr - depth-based Froude number at the confined condition
             % Ouputs:
-            %   u1 - The core wake velocity (m/s)
+            %   uw - The core wake velocity (m/s)
             %   num - Numerator of equation 43 (for convergence diagnostics)
             %   den - Denominator of equation 43 (for convergence diagnostics)
-            num = (Fr.^2 .* u2.^4) - (4 + 2.*Fr.^2).*(V0.^2 .* u2.^2) + (8.*V0.^3 .* u2) - (4.*V0.^4) + (4.* beta .* CT .* V0.^4) + (Fr.^2 .* V0.^4);
-            den = (-4 .* Fr.^2 .* u2.^3) + (4.*Fr.^2 + 8).*(V0.^2 .* u2) - (8.*V0.^3);
-            u1 = num ./ den;
+            num = (Fr.^2 .* ub.^4) - (4 + 2.*Fr.^2).*(Uinf.^2 .* ub.^2) + (8.*Uinf.^3 .* ub) - (4.*Uinf.^4) + (4.* beta .* CT .* Uinf.^4) + (Fr.^2 .* Uinf.^4);
+            den = (-4 .* Fr.^2 .* ub.^3) + (4.*Fr.^2 + 8).*(Uinf.^2 .* ub) - (8.*Uinf.^3);
+            uw = num ./ den;
         end
 
         % Ross and Polagye Equation 44:
-        function u1 = solveU1_Thrust(u2, CT, V0)
-            % Ross and Polagye Equation 44: solves for u1, the core wake
+        function uw = solveUw_Thrust(ub, CT, Uinf)
+            % Ross and Polagye Equation 44: solves for uw, the core wake
             % velocity, using a thrust relation. Note that this is the same as
             % Ross and Polagye Equation 23, but rearranged.
             % Inputs:
-            %   u2 - the bypass velocity (m/s)
+            %   ub - the bypass velocity (m/s)
             %   CT - thrust coefficient at confined condition
-            %   V0 - undisturbed freestream velocity at the confined condition (m/s)
+            %   Uinf - undisturbed freestream velocity at the confined condition (m/s)
             % Ouputs:
-            %   u1 - The core wake velocity (m/s)
-            u1 = HoulsbyOpenChannel.solveU1_direct(u2, CT, V0);
+            %   uw - The core wake velocity (m/s)
+            uw = HoulsbyOpenChannel.solveUw_direct(ub, CT, Uinf);
         end
         
         % Ross and Polagye Equation 45:
-        function ut = solveUt(u1, u2, d0, V0, beta)
+        function ut = solveUt(uw, ub, h, Uinf, beta)
             % Ross and Polagye Equation 45: Solves for the velocity at the
             % turbine at the confined condition.
             % Inputs:
-            %   u1 - the core wake velocity (m/s)
-            %   u2 - the bypass velocity (m/s)
-            %   d0 - undisturbed dynamic depth at the confined condition (m)
-            %   V0 - undisturbed freestream velocity at the confined condition (m/s)
+            %   uw - the core wake velocity (m/s)
+            %   ub - the bypass velocity (m/s)
+            %   h - undisturbed dynamic depth at the confined condition (m)
+            %   Uinf - undisturbed freestream velocity at the confined condition (m/s)
             %   beta - the channel blockage (decimal)
             % Ouputs:
             %   ut - The velocity at the turbine at the confined condition (m/s)
-            num = u1 .* (u2 - V0) .* (2.*HoulsbyOpenChannel.g.*d0 - u2.^2 - u2.*V0);
-            den = 2 .* beta .* HoulsbyOpenChannel.g .* d0 .* (u2 - u1);
+            num = uw .* (ub - Uinf) .* (2.*HoulsbyOpenChannel.g.*h - ub.^2 - ub.*Uinf);
+            den = 2 .* beta .* HoulsbyOpenChannel.g .* h .* (ub - uw);
             ut = num ./ den;
         end
 
         %% Froude number and dynamic depth calculations
 
-        function Fr = calcFroude(V0, d0)
+        function Fr = calcFroude(Uinf, h)
             % Calculates the depth based Froude number from the input channel
-            % depth (d0) and freestream velocity (V0). A rectangular
+            % depth (h) and freestream velocity (Uinf). A rectangular
             % channel is assumed.
-            Fr = V0 ./ sqrt(d0 .* HoulsbyOpenChannel.g);
+            Fr = Uinf ./ sqrt(h .* HoulsbyOpenChannel.g);
         end
     
-        function [d0] = calcDepthFromFroude(V0Target, FrTarget)
+        function [h] = calcDepthFromFroude(UinfTarget, FrTarget)
             % Given a target Froude number and freestream velocity, calculates
             % the corresponding depth required to meet that condition.
-            d0 = V0Target.^2 ./ FrTarget.^2 ./ HoulsbyOpenChannel.g;
+            h = UinfTarget.^2 ./ FrTarget.^2 ./ HoulsbyOpenChannel.g;
         end
 
-        function [d0_2] = calcDepthFromBlockage(d0_1, beta_1, beta_2)
+        function [h_2] = calcDepthFromBlockage(h_1, beta_1, beta_2)
             % Given two blockage states and the depth at one blockage state,
             % computes the depth of the other blockage state assuming constant
             % channel width and turbine area.
-            d0_2 = beta_1 ./ beta_2 .* d0_1;
+            h_2 = beta_1 ./ beta_2 .* h_1;
         end
 
         %% Linear mometum channel depth calculations
@@ -590,45 +590,45 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             end
         end
 
-        function [hdUp] = calcUpstreamDiskDepth(h, V0, ut)
+        function [hdUp] = calcUpstreamDiskDepth(h, Uinf, ut)
             % Calculates the depth in the core flow just upstream of the
             % actuator disk via Bernoulli, given the upstream undisturbed
-            % upstream depth (h), undisturbed inflow velocity (V0), and
+            % upstream depth (h), undisturbed inflow velocity (Uinf), and
             % velocity at the turbine (ut).
-            hdUp = h + 1/(2*HoulsbyOpenChannel.g) .* (V0.^2 - ut.^2);
+            hdUp = h + 1/(2*HoulsbyOpenChannel.g) .* (Uinf.^2 - ut.^2);
         end
 
-        function [hdDown] = calcDownstreamDiskDepth(h4, ut, u1)
+        function [hdDown] = calcDownstreamDiskDepth(h4, ut, uw)
             % Calculates the depth in the core flow just upstream of the
             % actuator disk via Bernoulli, given the depth in the bypass
-            % (h4), velocity at the turbine (ut), and velocity in core wake (u1).
-            hdDown = h4 + 1/(2*HoulsbyOpenChannel.g) .* (u1.^2 - ut.^2);
+            % (h4), velocity at the turbine (ut), and velocity in core wake (uw).
+            hdDown = h4 + 1/(2*HoulsbyOpenChannel.g) .* (uw.^2 - ut.^2);
         end
 
-        function [dhDisk] = calcDiskDrop(V0, CT)
+        function [dhDisk] = calcDiskDrop(Uinf, CT)
             % Calculates the free surface drop across the disk given the
             % velcocity and thrust coefficient
-            dhDisk = 1/(2*HoulsbyOpenChannel.g) .* CT .* V0.^2;
+            dhDisk = 1/(2*HoulsbyOpenChannel.g) .* CT .* Uinf.^2;
         end
 
-        function [hBypass] = calcBypassDepth(h, V0, u2)
+        function [hBypass] = calcBypassDepth(h, Uinf, ub)
             % Calculates the depth in the bypass flow/core wake downstream
             % of the actuator disk via Bernoulli, given the undisturbed
             % upstream depth (h), velocity at the turbine (ut), and bypass
-            % velocity (u2).
-            hBypass = h + 1/(2*HoulsbyOpenChannel.g) .* (V0.^2 - u2.^2);
+            % velocity (ub).
+            hBypass = h + 1/(2*HoulsbyOpenChannel.g) .* (Uinf.^2 - ub.^2);
         end
 
         % function [conf] = calcLMADDepths(conf)
         %     for i = 1:size(conf,1)
         %         for j = 1:size(conf,2)
         %             % Calculate all depths
-        %             conf(i,j).hBypass = calcBypassDepth(conf(i,j).d0, conf(i,j).V0, conf(i,j).u2);
-        %             conf(i,j).hdUp = calcUpstreamDiskDepth(conf(i,j).d0, conf(i,j).V0, conf(i,j).ut);
-        %             conf(i,j).hdDown = calcUpstreamDiskDepth(conf(i,j).hBypass, conf(i,j).ut, conf(i,j).u1);
+        %             conf(i,j).hBypass = calcBypassDepth(conf(i,j).h, conf(i,j).Uinf, conf(i,j).ub);
+        %             conf(i,j).hdUp = calcUpstreamDiskDepth(conf(i,j).h, conf(i,j).Uinf, conf(i,j).ut);
+        %             conf(i,j).hdDown = calcUpstreamDiskDepth(conf(i,j).hBypass, conf(i,j).ut, conf(i,j).uw);
         % 
         %             % Calculate drop across the disk predicted by thrust
-        %             conf(i,j).dhDisk = calcDiskDrop(conf(i,j).V0, conf(i,j).CT);
+        %             conf(i,j).dhDisk = calcDiskDrop(conf(i,j).Uinf, conf(i,j).CT);
         % 
         %             % Calculate total free surface deformation
         %             conf(i,j).dhToh = hb.calcTotalSurfaceDeformation(conf(i,j).CT, conf(i,j).beta, conf(i,j).Fr);
@@ -644,156 +644,156 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             depthVal = 1e6;
             fprintf('Setting depth to %g for open-channel limiting case of Fr -> 0 (closed-channel).\n', depthVal);
             for i = 1:numel(conf)
-                conf(i).d0 = depthVal .* ones(size(conf(i).d0));
+                conf(i).h = depthVal .* ones(size(conf(i).h));
             end
         end
 
-        %% Iteration scheme for solving for u2 using Ross and Polagye equations 43 and 44
-        % CT, V0, Fr are known
-        % u2, u1 are unknown
+        %% Iteration scheme for solving for ub using Ross and Polagye equations 43 and 44
+        % CT, Uinf, Fr are known
+        % ub, uw are unknown
 
-        function [u2, err, exitFlag] = convergeU2(u2Guess, conf)
-            % Using Ross and Polagye Equations 43-44, iterates to find u2
-            % satisfies both EQ 43 and EQ 44, and returns that u2
+        function [ub, err, exitFlag] = convergeUb(ubGuess, conf)
+            % Using Ross and Polagye Equations 43-44, iterates to find ub
+            % satisfies both EQ 43 and EQ 44, and returns that ub
             % Inputs:
-            %   u2Guess - Initial guess for u2 (as a two element vector for fzero)
+            %   ubGuess - Initial guess for ub (as a two element vector for fzero)
             %   conf    - Confined performance data as described in the
             %             HoulsbyOpenChannel class documentation.
             % Outputs:
-            %   u2      - Converged values of bypass velocity (m/s)
+            %   ub      - Converged values of bypass velocity (m/s)
             %   err     - Error between EQ 43 and EQ 44 at convergence
             %   exitFlag - fzero exit condition
 
             % Preallocate
             nPoints = length(conf.TSR);
-            u2 = zeros(size(conf.TSR));
+            ub = zeros(size(conf.TSR));
             err = zeros(size(conf.TSR));
             exitFlag = zeros(size(conf.TSR));
 
             % Iterate for each point
             for k = 1:nPoints
                 % If good point, proceed
-                if ~isnan(u2Guess(k)) && (conf.CT(k) >= 0)
-                    currFun = @(u2) HoulsbyOpenChannel.u2Compare(u2, conf.beta(k), conf.CT(k), conf.V0(k), conf.Fr(k));
+                if ~isnan(ubGuess(k)) && (conf.CT(k) >= 0)
+                    currFun = @(ub) HoulsbyOpenChannel.ubCompare(ub, conf.beta(k), conf.CT(k), conf.Uinf(k), conf.Fr(k));
 
-                    % [u2(k), err(k), exitFlag(k)] = fzero(currFun, u2Guess(k,:));
-                    [u2(k), err(k), exitFlag(k)] = fminsearch(currFun, u2Guess(k,:));
+                    % [ub(k), err(k), exitFlag(k)] = fzero(currFun, ubGuess(k,:));
+                    [ub(k), err(k), exitFlag(k)] = fminsearch(currFun, ubGuess(k,:));
                 else
-                    warning('Negative CT value or bad u2Guess: skipping application of LMAD for this point');
-                    u2(k) = nan;
+                    warning('Negative CT value or bad ubGuess: skipping application of LMAD for this point');
+                    ub(k) = nan;
                     err(k) = nan;
                     exitFlag(k) = nan;
                 end
             end
         end
 
-        function [u1_Fr, u1_Thrust] = solveU1_both(u2, beta, CT, V0, Fr)
-            % Calculates u1, the core wake velocity, using Ross and Polagye
+        function [uw_Fr, uw_Thrust] = solveUw_both(ub, beta, CT, Uinf, Fr)
+            % Calculates uw, the core wake velocity, using Ross and Polagye
             % EQs 43 and 44, and returns the values from each equation
             % Inputs:
-            %   u2Guess - Bypass velocity (m/s)
+            %   ubGuess - Bypass velocity (m/s)
             %   beta - channel blockage ratio
             %   CT - thrust coefficient
-            %   V0 - undisturbed freestream velocity (m/s)
+            %   Uinf - undisturbed freestream velocity (m/s)
             %   Fr - depth-based Froude number
             % Outputs:
-            %   u1_Fr - u1 calculated via Ross and Polagye equation 43
-            %   u1_Thrust - u1 calculated via Ross and Polagye equation 44
-            u1_Fr = HoulsbyOpenChannel.solveU1_Froude(u2, beta, CT, V0, Fr);
-            u1_Thrust = HoulsbyOpenChannel.solveU1_Thrust(u2, CT, V0);
+            %   uw_Fr - uw calculated via Ross and Polagye equation 43
+            %   uw_Thrust - uw calculated via Ross and Polagye equation 44
+            uw_Fr = HoulsbyOpenChannel.solveUw_Froude(ub, beta, CT, Uinf, Fr);
+            uw_Thrust = HoulsbyOpenChannel.solveUw_Thrust(ub, CT, Uinf);
         end
 
-        function err = u2Compare(u2Guess, beta, CT, V0, Fr)
-            % Calculates u1, the core wake velocity, using Ross and Polagye
+        function err = ubCompare(ubGuess, beta, CT, Uinf, Fr)
+            % Calculates uw, the core wake velocity, using Ross and Polagye
             % EQs 43 and 44, and returns the error between the values yielded
             % by each method.
             % Inputs:
-            %   u2Guess - Bypass velocity (m/s)
+            %   ubGuess - Bypass velocity (m/s)
             %   beta - channel blockage ratio
             %   CT - thrust coefficient
-            %   V0 - undisturbed freestream velocity (m/s)
+            %   Uinf - undisturbed freestream velocity (m/s)
             %   Fr - depth-based Froude number
             % Outputs:
-            %   err - Error between u1 calculated via Ross and Polagye EQ 43 and
-            %         u1 calculated via Ross and Polagye EQ 44
+            %   err - Error between uw calculated via Ross and Polagye EQ 43 and
+            %         uw calculated via Ross and Polagye EQ 44
             %
             % ## NOTE: Real part of solution is used to assess convergence
             %          to avoid issues with fminsearch and complex values.
 
             % Check if physical. If not, make error large
-            if u2Guess / V0 <= 1
+            if ubGuess / Uinf <= 1
                 err = 1e6;
             else
-                % Solve for u1 both ways
-                [u1_Fr, u1_Thrust] = HoulsbyOpenChannel.solveU1_both(u2Guess, beta, CT, V0, Fr);
+                % Solve for uw both ways
+                [uw_Fr, uw_Thrust] = HoulsbyOpenChannel.solveUw_both(ubGuess, beta, CT, Uinf, Fr);
     
                 % Error for fzero:
-                % err = real(u1_Fr - u1_Thrust); % Take only error of real parts to nudge away from complex solutions
+                % err = real(uw_Fr - uw_Thrust); % Take only error of real parts to nudge away from complex solutions
     
                 % Error for fminsearch
-                err = abs(real(u1_Fr - u1_Thrust));
+                err = abs(real(uw_Fr - uw_Thrust));
     
                 % Compute error between values
-                % err = u1_1 - u1_2; % Compute error between those values
-                % err = abs(u1_1) - abs(u1_2); % Take error of magnitudes
+                % err = uw_1 - uw_2; % Compute error between those values
+                % err = abs(uw_1) - abs(uw_2); % Take error of magnitudes
             end
         end
 
         % Visualization
-        function [u1Err, ax] = plotU2ConvergenceRegion(u2Test, beta, CT, V0, Fr)
-            % Plots the error between the two methods for calculating u1 (used
-            % in u2 iteration) for a specific beta, CT, V0, and Fr Useful for
+        function [uwErr, ax] = plotUbConvergenceRegion(ubTest, beta, CT, Uinf, Fr)
+            % Plots the error between the two methods for calculating uw (used
+            % in ub iteration) for a specific beta, CT, Uinf, and Fr Useful for
             % visually determining whether a given point can ever converge.
 
-            % Generate test values for u2 and evaluate u1 error for each
-            u1Err = HoulsbyOpenChannel.u2Compare(u2Test, beta, CT, V0, Fr);
+            % Generate test values for ub and evaluate uw error for each
+            uwErr = HoulsbyOpenChannel.ubCompare(ubTest, beta, CT, Uinf, Fr);
 
             % Plot
             [fig] = figure();
             ax = axes(fig);
             grid(ax, 'on'); hold(ax, 'on');
-            plot(ax, u2Test, zeros(size(u2Test)), '-k');
-            plot(ax, u2Test, u1Err, '-', 'marker', '.');
+            plot(ax, ubTest, zeros(size(ubTest)), '-k');
+            plot(ax, ubTest, uwErr, '-', 'marker', '.');
             xlabel(ax, '$u_2$');
             ylabel(ax, '$u_1$ error');
         end
 
-        %% Iteration scheme for solving for u1 with known u2, unknown V0
-        function [V0_2, err, exitFlag] = convergeV02(V0_2Guess, beta_2, conf_1, constantFr)
-            % Using Ross and Polagye Equations 43-44 iterates to find V0 
-            % that satisfies both EQ 43 and EQ 44, and returns that V0.
+        %% Iteration scheme for solving for uw with known ub, unknown Uinf
+        function [Uinf_2, err, exitFlag] = convergeUinf2(Uinf_2Guess, beta_2, conf_1, constantFr)
+            % Using Ross and Polagye Equations 43-44 iterates to find Uinf 
+            % that satisfies both EQ 43 and EQ 44, and returns that Uinf.
             % Used to forecast performance from blockage 1 to blockage 2.
             % Inputs:
-            %   V0_2Guess  - A guess for the freestream velocity at beta_2
+            %   Uinf_2Guess  - A guess for the freestream velocity at beta_2
             %   beta_2     - Target blockage for forecasting (scalar, decimal)
             %   conf_1     - Performance data at starting blockage (beta_1)
             %                formatted as described in HoulsbyOpenChannel
             %                class documentation
             %   constantFr - Whether to hold the Froude number constant
             %                between beta_1 and beta_2 (true) or allow to
-            %                vary (false). If constantFr=true, d0 at beta_2
-            %                is calculated using Fr at beta_1 and V0 at
-            %                beta_2. If constantFr=false, d0 at beta_2 is
-            %                calculated using d0 at beta_1 and assuming
+            %                vary (false). If constantFr=true, h at beta_2
+            %                is calculated using Fr at beta_1 and Uinf at
+            %                beta_2. If constantFr=false, h at beta_2 is
+            %                calculated using h at beta_1 and assuming
             %                constant channel width.
             % Outputs:
-            %   V0_2     - Converged value of freestream velocity at beta_2 (m/s)
+            %   Uinf_2     - Converged value of freestream velocity at beta_2 (m/s)
             %   err      - Error between EQ 43 and EQ 44 at convergence
             %   exitFlag - fzero exit condition
 
             % Preallocate
             nPoints = length(conf_1.TSR);
-            V0_2 = zeros(size(conf_1.TSR));
+            Uinf_2 = zeros(size(conf_1.TSR));
             err = zeros(size(conf_1.TSR));
             exitFlag = zeros(size(conf_1.TSR));
 
-            % Compute d0_2guess based on Froude number assumption
+            % Compute h_2guess based on Froude number assumption
             if constantFr
-                % Let d0_2 vary to hold Fr_1 = Fr_2 as V0_2 varies
-                d0_2Guess = NaN .* ones(size(conf_1.d0));
+                % Let h_2 vary to hold Fr_1 = Fr_2 as Uinf_2 varies
+                h_2Guess = NaN .* ones(size(conf_1.h));
             else 
-                % Fix d0_2 based on target blockage, intentionally let Fr vary with V0_2
-                d0_2Guess = HoulsbyOpenChannel.calcDepthFromBlockage(conf_1.d0, conf_1.beta, beta_2);
+                % Fix h_2 based on target blockage, intentionally let Fr vary with Uinf_2
+                h_2Guess = HoulsbyOpenChannel.calcDepthFromBlockage(conf_1.h, conf_1.beta, beta_2);
             end
 
             % Set options
@@ -801,35 +801,35 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
             % Iterate for each point
             for k = 1:nPoints
-                currFun = @(V0_2) HoulsbyOpenChannel.V02Compare(V0_2, ...
-                                                                d0_2Guess(k), ...
+                currFun = @(Uinf_2) HoulsbyOpenChannel.Uinf2Compare(Uinf_2, ...
+                                                                h_2Guess(k), ...
                                                                 beta_2, ...
-                                                                conf_1.u2(k), ...
+                                                                conf_1.ub(k), ...
                                                                 conf_1.CT(k), ...
-                                                                conf_1.V0(k), ...
+                                                                conf_1.Uinf(k), ...
                                                                 conf_1.Fr(k));
 
-                % [V0_2(k), err(k), exitFlag] = fzero(currFun, V0_2Guess(k,:), options);
-                [V0_2(k), err(k), exitFlag] = fminsearch(currFun, V0_2Guess(k,:), options);
-                % [V0_2(k), err(k), exitFlag] = fminbnd(currFun, V0_2Guess(k,:), options);
+                % [Uinf_2(k), err(k), exitFlag] = fzero(currFun, Uinf_2Guess(k,:), options);
+                [Uinf_2(k), err(k), exitFlag] = fminsearch(currFun, Uinf_2Guess(k,:), options);
+                % [Uinf_2(k), err(k), exitFlag] = fminbnd(currFun, Uinf_2Guess(k,:), options);
             end
         end
 
 
-        function err = V02Compare(V0_2Guess, d0_2Guess, beta_2, u2, CT_1, V0_1, Fr_1)
-            % Calculates V0_2, the freestream velocity at blockage 2, using
+        function err = Uinf2Compare(Uinf_2Guess, h_2Guess, beta_2, ub, CT_1, Uinf_1, Fr_1)
+            % Calculates Uinf_2, the freestream velocity at blockage 2, using
             % Ross and Polagye EQs 43 and 44, and returns the error between
             % the values yielded by each method.
             % Inputs:
-            %   V0_2Guess - Guess for freestream velocity at blockage 2 (m/s)
-            %   d0_2Guess - Guess for water depth at blockage 2 (m)
+            %   Uinf_2Guess - Guess for freestream velocity at blockage 2 (m/s)
+            %   h_2Guess - Guess for water depth at blockage 2 (m)
             %   beta_2    - channel blockage ratio at blockage 2
             %   CT_1      - thrust coefficient at blockage 1
-            %   V0_1      - undisturbed freestream velocity at blockage 1 (m/s)
+            %   Uinf_1      - undisturbed freestream velocity at blockage 1 (m/s)
             %   Fr_1      - depth-based Froude number at blockage 1
             % Outputs:
-            % err - Error between V0_2 calculated via Ross and Polagye EQ 43 and
-            %       V0_2 calculated via Ross and Polagye EQ 44
+            % err - Error between Uinf_2 calculated via Ross and Polagye EQ 43 and
+            %       Uinf_2 calculated via Ross and Polagye EQ 44
             %
             % ## NOTE: Real part of solution is used to assess convergence
             %          to avoid issues with fminsearch and complex values.
@@ -838,46 +838,46 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Check that this guess is physical (bypass faster than
             % freestream). If not, give larger error to nudge away from
             % this spot.
-            if (u2 / V0_2Guess) <= 1
+            if (ub / Uinf_2Guess) <= 1
                 err = 1e6; % Give large error to move away from this spot
             else
 
                 % Compute CT
-                CT_2 = HoulsbyOpenChannel.scaleForcingMetric(CT_1, V0_1, V0_2Guess);
+                CT_2 = HoulsbyOpenChannel.scaleForcingMetric(CT_1, Uinf_1, Uinf_2Guess);
     
                 % Check Fr case
-                if ~isnan(d0_2Guess) 
-                    % d0_2 is given, then calculate Fr_2 from V0_2 and d0_2
-                    Fr_2 = HoulsbyOpenChannel.calcFroude(V0_2Guess, d0_2Guess);
+                if ~isnan(h_2Guess) 
+                    % h_2 is given, then calculate Fr_2 from Uinf_2 and h_2
+                    Fr_2 = HoulsbyOpenChannel.calcFroude(Uinf_2Guess, h_2Guess);
                 else 
                     % Otherwise, assume Fr_2 = Fr_1
                     Fr_2 = Fr_1;
                 end
                 
-                % Compute u1 from equation for u1
-                [u1_Fr, u1_Thrust] = HoulsbyOpenChannel.solveU1_both(u2, beta_2, CT_2, V0_2Guess, Fr_2);
+                % Compute uw from equation for uw
+                [uw_Fr, uw_Thrust] = HoulsbyOpenChannel.solveUw_both(ub, beta_2, CT_2, Uinf_2Guess, Fr_2);
 
                 % Once again, check if physical (freestream faster than
                 % wake). If not, assign large error.
-                % if (u1_Fr / V0_2Guess >= 1)
+                % if (uw_Fr / Uinf_2Guess >= 1)
                 %     err = 1e6;
                 % else
                 % Error for fzero
-                %err = real(u1_Fr - u1_Thrust); % Error approach for fzero. Take only error of real parts to nudge away from complex solutions
+                %err = real(uw_Fr - uw_Thrust); % Error approach for fzero. Take only error of real parts to nudge away from complex solutions
     
                 % Error for fminsearch
-                err = abs(u1_Fr - u1_Thrust); % Error approach for fminsearch
+                err = abs(uw_Fr - uw_Thrust); % Error approach for fminsearch
     
                 % Alternative errors
-                % err = u1_1 - u1_2; % Compute error between those values
-                % err = abs(u1_1) - abs(u1_2); % Take error of magnitudes
+                % err = uw_1 - uw_2; % Compute error between those values
+                % err = abs(uw_1) - abs(uw_2); % Take error of magnitudes
                 % end
             end
         end
 
 
-        function [diag] = assessV02ConvergenceRegion(conf, u2V0Test, beta_2)
-            % Assesses convergence region for V0_2 in analytical blockage
+        function [diag] = assessUinf2ConvergenceRegion(conf, ubUinfTest, beta_2)
+            % Assesses convergence region for Uinf_2 in analytical blockage
             % forecasting by decomposing Ross and Polagye Equations 43 and
             % 44. Returns a structure of various intermediate values that
             % arise from the evaluation of these equations, which may be
@@ -887,7 +887,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Inputs 
             %   conf     - Structure of confined performance data as 
             %              described in the class documentation
-            %   u2V0Test - The value of the ratio between u2 and V0 to
+            %   ubUinfTest - The value of the ratio between ub and Uinf to
             %              evaluate the equations at
             %   beta_2   -
             % Outputs
@@ -899,44 +899,44 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             diag = struct;
             for i = 1:size(conf,1)
                 for j = 1:size(conf,2)
-                    % Compute V0_2 test values from u2V0Test
-                    V0_2Test = conf(i,j).u2 ./ u2V0Test;
+                    % Compute Uinf_2 test values from ubUinfTest
+                    Uinf_2Test = conf(i,j).ub ./ ubUinfTest;
 
                     % Determine depth to hold Fr constant in freestream
-                    d0_2Test = HoulsbyOpenChannel.calcDepthFromFroude(V0_2Test, conf(i,j).Fr);
+                    h_2Test = HoulsbyOpenChannel.calcDepthFromFroude(Uinf_2Test, conf(i,j).Fr);
 
                     % Calculate corresponding Froude number in bypass
-                    diag(i,j).FrBypass = conf(i,j).u2 ./ sqrt(9.81 * d0_2Test);
+                    diag(i,j).FrBypass = conf(i,j).ub ./ sqrt(9.81 * h_2Test);
 
                     % Preallocate
                     nPoints = length(conf(i,j).CT);
                     diag(i,j).beta_2 = beta_2;
                     diag(i,j).Fr_2 = conf(i,j).Fr;
-                    diag(i,j).V0_2 = V0_2Test;
-                    diag(i,j).u1_Fr = zeros(nPoints, length(u2V0Test));
-                    diag(i,j).u1_Fr_num = zeros(nPoints, length(u2V0Test));
-                    diag(i,j).u1_Fr_den = zeros(nPoints, length(u2V0Test));
-                    diag(i,j).u1_Thrust = zeros(nPoints, length(u2V0Test));
-                    diag(i,j).CTBetaTerm = zeros(nPoints, length(u2V0Test));
-                    diag(i,j).CT = zeros(nPoints, length(u2V0Test));
+                    diag(i,j).Uinf_2 = Uinf_2Test;
+                    diag(i,j).uw_Fr = zeros(nPoints, length(ubUinfTest));
+                    diag(i,j).uw_Fr_num = zeros(nPoints, length(ubUinfTest));
+                    diag(i,j).uw_Fr_den = zeros(nPoints, length(ubUinfTest));
+                    diag(i,j).uw_Thrust = zeros(nPoints, length(ubUinfTest));
+                    diag(i,j).CTBetaTerm = zeros(nPoints, length(ubUinfTest));
+                    diag(i,j).CT = zeros(nPoints, length(ubUinfTest));
 
                     for k = 1:length(conf(i,j).CT) % For each point
 
                         % Get CT_2
-                        CT_2 = HoulsbyOpenChannel.scaleForcingMetric(conf(i,j).CT(k), conf(i,j).V0(k), V0_2Test(k,:));
+                        CT_2 = HoulsbyOpenChannel.scaleForcingMetric(conf(i,j).CT(k), conf(i,j).Uinf(k), Uinf_2Test(k,:));
 
                         % Solve both equations for wake velocity
-                        [u1_Fr, u1_Fr_num, u1_Fr_den] = HoulsbyOpenChannel.solveU1_Froude(conf(i,j).u2(k), beta_2, CT_2, V0_2Test(k,:), conf(i,j).Fr(k));
-                        [u1_Thrust] = HoulsbyOpenChannel.solveU1_Thrust(conf(i,j).u2(k), CT_2, V0_2Test(k,:));
+                        [uw_Fr, uw_Fr_num, uw_Fr_den] = HoulsbyOpenChannel.solveUw_Froude(conf(i,j).ub(k), beta_2, CT_2, Uinf_2Test(k,:), conf(i,j).Fr(k));
+                        [uw_Thrust] = HoulsbyOpenChannel.solveUw_Thrust(conf(i,j).ub(k), CT_2, Uinf_2Test(k,:));
 
                         % Save results
-                        diag(i,j).u1_Fr(k,:) = u1_Fr;
-                        diag(i,j).u1_Fr_num(k,:) = u1_Fr_num;
-                        diag(i,j).u1_Fr_den(k,:) = u1_Fr_den;
-                        diag(i,j).u1_Thrust(k,:) = u1_Thrust;
+                        diag(i,j).uw_Fr(k,:) = uw_Fr;
+                        diag(i,j).uw_Fr_num(k,:) = uw_Fr_num;
+                        diag(i,j).uw_Fr_den(k,:) = uw_Fr_den;
+                        diag(i,j).uw_Thrust(k,:) = uw_Thrust;
 
                         % Also compute beta term
-                        diag(i,j).CTBetaTerm(k,:) = 4 .* CT_2 .* beta_2 .* V0_2Test(k,:).^4;
+                        diag(i,j).CTBetaTerm(k,:) = 4 .* CT_2 .* beta_2 .* Uinf_2Test(k,:).^4;
                         diag(i,j).CT(k,:) = CT_2;
                     end
                 end
