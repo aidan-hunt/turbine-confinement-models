@@ -13,12 +13,12 @@
 %
 % Open-channel linear momentum on an actuator disk is used to solve for the
 % following properties:
-%   uw      - Core wake velocity
-%   ub      - Bypass velocity
-%   ut      - Velocity at the turbine
+%   uw        - Core wake velocity
+%   ub        - Bypass velocity
+%   ut        - Velocity at the turbine
 %   UinfPrime - Unconfined freestream velocity
-%   Fr      - Depth-based Froude number
-%   dhToh   - Free-surface drop across the turbine rotor normalized by
+%   Fr        - Depth-based Froude number
+%   dhToh     - Free-surface drop across the turbine rotor normalized by
 %             upstream depth
 % These quantities can then be used for blockage correction or blockage
 % forecasting.
@@ -50,8 +50,8 @@
 % The methods above expect that confined performance data is provided as an
 % mxn structure array, conf, with the following fields:
 %   beta (required)   - blockage ratio
-%   Uinf   (required)   - undisturbed upstream freestream velocity (m/s)
-%   h   (required)   - undisturbed upstream water depth (m)
+%   Uinf (required)   - undisturbed upstream freestream velocity (m/s)
+%   h    (required)   - undisturbed upstream water depth (m)
 %   CT   (required)   - thrust coefficient
 %   CP   (optional)   - performance coefficient
 %   CQ   (optional)   - torque coefficient
@@ -105,15 +105,21 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Outputs
             %   conf      - The input structure with the following fields
             %               added:
-            %               Fr       - Depth-based Froude number (rectangular channel assumed)
-            %               dhToh    - Normalized free-surface drop across the rotor
-            %               uw       - Wake velocity estimated from closed-channel LMAD
-            %               ub       - Bypass velocity estimated from closed-channel LMAD
-            %               ut       - Velocity at the turbine estimated from closed-channel LMAD
+            %               Fr         - Depth-based Froude number (rectangular channel assumed)
+            %               dhToh      - Normalized free-surface drop across the rotor
+            %               uw         - Wake velocity estimated from closed-channel LMAD
+            %               ub         - Bypass velocity estimated from closed-channel LMAD
+            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
             %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               ubuwIter - Iteration diagnostics for ub/uw
-            %               ubIter   - Iteration diagnostics for ub
-            %               isPhys   - Results of physical validity checks on uw, ub, ut
+            %               hBypass    - Water depth at the location where ub and uw are defined.
+            %               hdUp       - Water depth just upstream of the actuator disk.
+            %               hdDown     - Water depth just downstream of the actuator disk.
+            %               dhDisk     - Change in water depth across the actuator disk.
+            %               dhToh      - Total free surface drop across channel, normalized by upstream water depth
+            %               hFinal     - Water depth far downstream of the actuator disk.
+            %               ubuwIter   - Iteration diagnostics for ub/uw
+            %               ubIter     - Iteration diagnostics for ub
+            %               isPhys     - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, predictUnconfined, forecastConfined, checkPhysicalValidity
 
@@ -238,15 +244,21 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %                          velocity and unconfined freestream velocity.
             %   conf      - The input structure with the following fields
             %               added:
-            %               Fr       - Depth-based Froude number (rectangular channel assumed)
-            %               dhToh    - Normalized free-surface drop across the rotor
-            %               uw       - Wake velocity estimated from closed-channel LMAD
-            %               ub       - Bypass velocity estimated from closed-channel LMAD
-            %               ut       - Velocity at the turbine estimated from closed-channel LMAD
+            %               Fr         - Depth-based Froude number (rectangular channel assumed)
+            %               dhToh      - Normalized free-surface drop across the rotor
+            %               uw         - Wake velocity estimated from closed-channel LMAD
+            %               ub         - Bypass velocity estimated from closed-channel LMAD
+            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
             %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               ubuwIter - Iteration diagnostics for ub/uw
-            %               ubIter   - Iteration diagnostics for ub
-            %               isPhys   - Results of physical validity checks on uw, ub, ut
+            %               hBypass    - Water depth at the location where ub and uw are defined.
+            %               hdUp       - Water depth just upstream of the actuator disk.
+            %               hdDown     - Water depth just downstream of the actuator disk.
+            %               dhDisk     - Change in water depth across the actuator disk.
+            %               dhToh      - Total free surface drop across channel, normalized by upstream water depth
+            %               hFinal     - Water depth far downstream of the actuator disk.
+            %               ubuwIter   - Iteration diagnostics for ub/uw
+            %               ubIter     - Iteration diagnostics for ub
+            %               isPhys     - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, solveLMAD, forecastConfined, checkPhysicalValidity
     
@@ -318,20 +330,26 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %                calculated using h at beta_1 and assuming
             %                constant channel width.
             % Outputs
-            %   conf_2     - A structure with the same size and fields as
-            %                output conf_1, but with each field corresponding to
-            %                the forecasted performance and velocities at beta_2. 
-            %   conf_1     - The input structure with the following fields
-            %                added:
-            %                Fr       - Depth-based Froude number (rectangular channel assumed)
-            %                dhToh    - Normalized free-surface drop across the rotor
-            %                uw       - Wake velocity estimated from closed-channel LMAD
-            %                ub       - Bypass velocity estimated from closed-channel LMAD
-            %                ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %                UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %                ubuwIter - Iteration diagnostics for ub/uw
-            %                ubIter   - Iteration diagnostics for ub
-            %                isPhys   - Results of physical validity checks on uw, ub, ut
+            %   conf_2    - A structure with the same size and fields as
+            %               output conf_1, but with each field corresponding to
+            %               the forecasted performance and velocities at beta_2. 
+            %   conf_1    - The input structure with the following fields
+            %               added:
+            %               Fr         - Depth-based Froude number (rectangular channel assumed)
+            %               dhToh      - Normalized free-surface drop across the rotor
+            %               uw         - Wake velocity estimated from closed-channel LMAD
+            %               ub         - Bypass velocity estimated from closed-channel LMAD
+            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
+            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               hBypass    - Water depth at the location where ub and uw are defined.
+            %               hdUp       - Water depth just upstream of the actuator disk.
+            %               hdDown     - Water depth just downstream of the actuator disk.
+            %               dhDisk     - Change in water depth across the actuator disk.
+            %               dhToh      - Total free surface drop across channel, normalized by upstream water depth
+            %               hFinal     - Water depth far downstream of the actuator disk.
+            %               ubuwIter   - Iteration diagnostics for ub/uw
+            %               ubIter     - Iteration diagnostics for ub
+            %               isPhys     - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, solveLMAD, predictUnconfined, checkPhysicalValidity
 
@@ -441,16 +459,22 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %                output conf_1, but with each field corresponding to
             %                the forecasted performance at beta_2. 
             %   conf_1     - The input structure with the following fields
-            %                added:
-            %                Fr       - Depth-based Froude number (rectangular channel assumed)
-            %                dhToh    - Normalized free-surface drop across the rotor
-            %                uw       - Wake velocity estimated from closed-channel LMAD
-            %                ub       - Bypass velocity estimated from closed-channel LMAD
-            %                ut       - Velocity at the turbine estimated from closed-channel LMAD
-            %                UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %                ubuwIter - Iteration diagnostics for ub/uw
-            %                ubIter   - Iteration diagnostics for ub
-            %                isPhys   - Results of physical validity checks on uw, ub, ut
+            %               added:
+            %               Fr         - Depth-based Froude number (rectangular channel assumed)
+            %               dhToh      - Normalized free-surface drop across the rotor
+            %               uw         - Wake velocity estimated from closed-channel LMAD
+            %               ub         - Bypass velocity estimated from closed-channel LMAD
+            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
+            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               hBypass    - Water depth at the location where ub and uw are defined.
+            %               hdUp       - Water depth just upstream of the actuator disk.
+            %               hdDown     - Water depth just downstream of the actuator disk.
+            %               dhDisk     - Change in water depth across the actuator disk.
+            %               dhToh      - Total free surface drop across channel, normalized by upstream water depth
+            %               hFinal     - Water depth far downstream of the actuator disk.
+            %               ubuwIter   - Iteration diagnostics for ub/uw
+            %               ubIter     - Iteration diagnostics for ub
+            %               isPhys     - Results of physical validity checks on uw, ub, ut
             %
             % See also: HoulsbyOpenChannel, solveLMAD, predictUnconfined, checkPhysicalValidity
             arguments

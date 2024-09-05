@@ -37,7 +37,7 @@
 % The methods above expect that confined performance data is provided as an
 % mxn structure array, conf, with the following fields:
 %   beta (required)   - blockage ratio
-%   Uinf   (required)   - undisturbed upstream freestream velocity (m/s)
+%   Uinf (required)   - undisturbed upstream freestream velocity (m/s)
 %   CT   (required)   - thrust coefficient
 %   CP   (optional)   - performance coefficient
 %   CQ   (optional)   - torque coefficient
@@ -79,12 +79,12 @@ classdef BWClosedChannel < BCBase
             % Outputs
             %   conf      - The input structure with the following fields
             %               added:
-            %               uw       - Wake velocity estimated from closed-channel LMAD
-            %               ub       - Bypass velocity estimated from closed-channel LMAD
-            %               ut       - Velocity at the turbine estimated from closed-channel LMAD
+            %               uw         - Wake velocity estimated from closed-channel LMAD
+            %               ub         - Bypass velocity estimated from closed-channel LMAD
+            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
             %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               ubuwIter - Iteration diagnostics for ub/uw
-            %               isPhys   - Results of physical validity checks on uw, ub, ut
+            %               ubuwIter   - Iteration diagnostics for ub/uw
+            %               isPhys     - Results of physical validity checks on uw, ub, ut
             %
             % See also: BWClosedChannel, predictUnconfined, forecastConfined, checkPhysicalValidity
 
@@ -145,23 +145,23 @@ classdef BWClosedChannel < BCBase
             %               conf structure and the following fields (if the
             %               field was not present in conf, it will not be
             %               present in unconf):
-            %               Uinf  - unconfined freestream velocity (equal to specified scaling velocity)
-            %               CT  - unconfined thrust coefficient
-            %               CP  - unconfined performance coefficient
-            %               CQ  - unconfined torque coefficient
-            %               CL  - unconfined lateral force coefficient
-            %               CF  - unconfined resultant force coefficient
-            %               TSR - unconfined tip-speed ratio
+            %               Uinf     - unconfined freestream velocity (equal to specified scaling velocity)
+            %               CT       - unconfined thrust coefficient
+            %               CP       - unconfined performance coefficient
+            %               CQ       - unconfined torque coefficient
+            %               CL       - unconfined lateral force coefficient
+            %               CF       - unconfined resultant force coefficient
+            %               TSR      - unconfined tip-speed ratio
             %               velRatio - Ratio between confined freestream
             %                          velocity and unconfined freestream velocity.
             %   conf      - The input structure with the following fields
             %               added:
-            %               uw       - Wake velocity estimated from closed-channel LMAD
-            %               ub       - Bypass velocity estimated from closed-channel LMAD
-            %               ut       - Velocity at the turbine estimated from closed-channel LMAD
+            %               uw         - Wake velocity estimated from closed-channel LMAD
+            %               ub         - Bypass velocity estimated from closed-channel LMAD
+            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
             %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               ubuwIter - Iteration diagnostics for ub/uw
-            %               isPhys   - Results of physical validity checks on uw, ub, ut
+            %               ubuwIter   - Iteration diagnostics for ub/uw
+            %               isPhys     - Results of physical validity checks on uw, ub, ut
             %
             % See also: BWClosedChannel, solveLMAD, forecastConfined, checkPhysicalValidity
 
@@ -241,12 +241,12 @@ classdef BWClosedChannel < BCBase
             %               output conf_1, but with each field corresponding to
             %               the forecasted performance and velocities at beta_2. 
             %   conf_1    - The input structure with the following fields added:
-            %               uw       - Wake velocity estimated from closed-channel LMAD
-            %               ub       - Bypass velocity estimated from closed-channel LMAD
-            %               ut       - Velocity at the turbine estimated from closed-channel LMAD
+            %               uw         - Wake velocity estimated from closed-channel LMAD
+            %               ub         - Bypass velocity estimated from closed-channel LMAD
+            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
             %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
-            %               ubuwIter - Iteration diagnostics for ub/uw
-            %               isPhys   - Results of physical validity checks on uw, ub, ut
+            %               ubuwIter   - Iteration diagnostics for ub/uw
+            %               isPhys     - Results of physical validity checks on uw, ub, ut
             %
             % See also: BWClosedChannel, solveLMAD, predictUnconfined, checkPhysicalValidity
 
