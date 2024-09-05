@@ -1,4 +1,4 @@
-# blockage-correction
+# linear-momentum
 This repository contains MATLAB scripts for applying various confined-flow linear momentum actuator disk theory (LMADT) models to turbine performance data to predict aspects of the flow field around the turbine.
 These LMADT models can be used as the basis for analytical blockage corrections, which predict turbine performance in unconfined flow from measured or simulated performance in confined flow.
 This repository was developed in support of the following manuscripts/journal articles:
@@ -11,7 +11,7 @@ Each LMADT model is implemented as a MATLAB class:
 - `DehtyriovCorrector`: A closed-channel two-scale linear-momentum-based blockage correction for turbine arrays as described by [Dehtyriov et al. (2023)](https://submissions.ewtec.org/proc-ewtec/article/view/366).
 
 ## Helper classes
-- `BCBase`: superclass that defines several basic functions used by all of the blockage corrector classes.
+- `BCBase`: superclass that defines several basic functions used by all of the LMADT or blockage corrector classes.
 - `BCTranslator`: utility class that provides functions for translating cross-flow turbine data produced at the University of Washington into a format that the blockage corrector classes expect. If you plan to use these blockage corrector objects extensively, I recommend you write a similar sort of syntax translator code for your data format.
 
 ## Miscellaneous
