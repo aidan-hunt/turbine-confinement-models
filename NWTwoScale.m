@@ -1,15 +1,31 @@
 % Aidan Hunt
 %
-% Implements a two-scale analytical blockage correction for turbine arrays
-% as described by Dehtyriov et al. in "A two-scale blockage correction for
-% an array of tidal turbines" (2023; https://doi.org/10.36688/ewtec-2023-366).
+% Implements a two-scale closed-channel linear momentum model for turbine
+% arrays as described by Nishino and Willden in "The efficiency of an array
+% of tidal turbines partially blocking a wide channel" (2012;
+% https://doi.org/10.1017/jfm.2012.349) and further expanded upon by
+% Dehtyriov et al in "Fractal-like actuator disk theory for optimal energy
+% extraction" (2021; https://doi.org/10.1017/jfm.2021.766). This
+% implementation follows that of Dehtyriov et al. in "A two-scale blockage
+% correction for an array of tidal turbines" (2023;
+% https://doi.org/10.36688/ewtec-2023-366), who provided a procedure for
+% estimating induction factors by using the measured blockages, thrust
+% coefficients, and freestream velocities as inputs to the two-scale model
+% (Figure 2 in Dehtyriov et al 2023). The resulting velocities may be used
+% to perform a blockage correction.
 %
-% To use the DehtyriovCorrector class, construct a DehtyriovCorrector object
+% IMPORTANT NOTE: This code uses the convention of Dehtyriov et al 2021 for
+% induction factors (alpha = ut/Uinf), which is different than that of
+% Nishino and Willden 2012 and Dehtyriov et al 2023 (alpha = 1 - ut/Uinf).
+% As we are following the implementation of Dehtyriov et al 2023, the
+% appropriate equations were updated to match the former convention above.
+%
+% To use the NWTwoScale class, construct a NWTwoScale object
 % using the following syntax:
-%   dc = DehtyriovCorrector()
-% and call methods using the dot notation (i.e., dc.predictUnconfined(...)).
+%   nw = NWTwoScale()
+% and call methods using the dot notation (i.e., nw.predictUnconfined(...)).
 % 
-% DehtyriovCorrector Methods:
+% NWTwoScale Methods:
 %   predictUnconfined - Uses a two-scale blockage correction to predict 
 %                       unconfined performance from confined performance
 %                       data.
@@ -29,43 +45,156 @@
 % datasets at once by specifying each dataset as an element of conf (e.g.,
 % conf(i,j)).
 %
-% The predictUnconfined method utilizes helper methods that implement the
-% equation set described in Dehtyriov et al (2023). The DehtyriovCorrector
-% class extends the BCBase class.
-%
 % See also: BCBase, BWClosedChannel, HoulsbyOpenChannel
 
-classdef DehtyriovCorrector < BCBase
-    % The DehtryiovCorrector class inherits all properties of the
-    % BCBase superclass.
-    properties (Access = public)
-        % Calculated array-scale blockage is multiplied by this value. 
-        % This can be used to artificially alter the array-scale blockage
-        % used in the correction and assess sensitivity of the results.
-        debugMult = 1; 
+classdef NWTwoScale < BCBase
+    % The NWTwoScale class inherits all properties of the
+    % BCBase superclass, and defines additional properties
+    properties (Constant, Access=protected)
+        correctionModes = {'standard', 'bluff body (array)', 'bluff body (device)'}
     end
 
     methods (Access = public)
         %% Main method for blockage correction
-        function unconf = predictUnconfined(dc, conf, geom, gammaGuess)
-            % Applies the two-scale blockage correction of Dehtyriov et al.
-            % to confined performance data to predict performance in an
-            % unconfined flow.
-            %
+        function conf = solveLMAD(nw, conf, geom, gammaGuess)
+            % Applies the two-scale LMADT model of Nishino and Willden 2012
+            % following the implementation of Dehtyriov et al 2023 (Figure
+            % 2) to compute the turbine, wake, and bypass velocities at
+            % each scale.
+            % 
             % Inputs (required)
             %   conf       - A structure of confined performance data with fields
-            %                as described in the DehtyriovCorrector class
+            %                as described in the NWTwoScale class
             %                documentation.
             %   geom       - A structure of array and channel geometry
             %                information with the following fields:
-            %                 n - Number of turbines in the array
-            %                 D - Diameter of each turbine (assumed equal
-            %                     across all turbines)
-            %                 H - Blade span of each turbine (assumed equal
-            %                     across all turbines)
-            %                 w - Channel width
-            %                 s - Spacing between adjacent turbines (assumed
-            %                     equal across all turbines)
+            %                devArea  - Turbine projected area [m^2]
+            %                devWidth - Turbine width [m]
+            %                n        - Number of turbines in the array
+            %                w        -  Channel width [m]
+            %                s        - Spacing between turbines [m]
+            % 
+            %   gammaGuess - An initial guess for the value of the local
+            %                and array-scale wake velocity induction
+            %                factor. A single guess is used to iterate on
+            %                both values.
+            % Outputs
+            %   conf  - The input structure, but with the following
+            %           fields added:
+            %       UinfPrime - Unconfined freestream velocity [m/s] for
+            %                   use in blockage correction.
+            %       array     - A structure of flow quantities, thrust, and
+            %                   blockage at the array scale.
+            %       device    - A structure of flow quantities, thrust, and
+            %                   blockage at the device scale. 
+            %       The "array" and "device" substructures each have the
+            %       following fields:
+            %           beta  - Blockage ratio at this scale
+            %           CT    - Thrust coefficient at this scale
+            %           Uinf  - Freestream velocity at this scale
+            %           ut    - Velocity through the turbine at this scale
+            %           uw    - Wake velocity at this scale
+            %           ub    - Bypass velocity at this scale
+            %           alpha - Turbine induction factor at this scale
+            %           gamma - Wake induction factor at this scale
+            %           gammaIter - Information of the gamma iteration
+            %                       procedure conducted at this scale
+
+            arguments
+                nw
+                conf
+                geom
+                gammaGuess (1,1) = 0.8;
+            end
+
+            % Check input for correct sizing
+            conf = nw.checkInputSizes(conf);
+
+            % Check if scalar struct for geometry provided. If so, repmat
+            if isequal(size(geom), [1,1])
+                geom = repmat(geom, size(conf,1), size(conf,2));
+            elseif all(size(conf) ~= size(geom))
+                error('Size of conf and geom structures must match, or geom must be a 1x1 structure that applies to all entries of conf.');
+            end
+
+            % Loop through all cases
+            for i = 1:size(conf, 1)
+                for j = 1:size(conf, 2)
+                    % Initialize structures for each scale
+                    device = nw.initializeScaleStruct();
+                    array = nw.initializeScaleStruct();
+
+                    % Calculate blockage scales from the provided geometry data
+                    device.beta = nw.calcLocalBlockage(geom(i,j).devArea, geom(i,j).devWidth, geom(i,j).s, conf(i,j).h);
+                    array.beta = nw.calcArrayBlockage(geom(i,j).devWidth, geom(i,j).n, geom(i,j).s, geom(i,j).w, conf(i,j).h);
+
+                    % Check for BA = 1 (singularity)
+                    if any(array.beta == 1)
+                        warning('Array blockage = 1 (equally spaced turbines spanning entire channel) results in non-physical results. Please use "BWClosedChannel" or "HoulsbyOpenChannel" for these cases instead.')
+                    end
+
+                    % Iterate to solve for array-scale induction factors
+                    % (Dehtyriov et al 2023 equations 28 and 9)
+                    [array.gamma, gammaAErr, gammaAExit] = nw.convergeGammaA(gammaGuess, conf(i,j).CT, array.beta, device.beta);
+                    array.alpha = nw.calcAlpha(array.gamma, array.beta);
+            
+                    % Solve for device-scale thrust
+                    % (Dehtyriov et al 2023 equation 5) 
+                    device.CT = nw.calcLocalThrustFromGlobal(conf(i,j).CT, array.alpha);
+            
+                    % Iterate to solve for device-scale induction factors
+                    % (Dehtyriov et al 2023 equations 6 and 8)
+                    [device.gamma, gammaLErr, gammaLExit] = nw.convergeGammaL(gammaGuess, device.CT, device.beta);
+                    device.alpha = nw.calcAlpha(device.gamma, device.beta);
+            
+                    % Solve for array-scale thrust
+                    % (Dehtryiov et al 2023 equation 4)
+                    array.CT = nw.calcArrayThrust(array.alpha, device.beta, device.CT);
+
+                    % Solve for unconfined freestream velocity for blockage
+                    % correction
+                    % (Dehtyriov et al 2023 equation 24)
+                    velRatio = nw.calcVelocityRatio(array.alpha, array.CT);
+                    conf(i,j).UinfPrime = conf(i,j).Uinf ./ velRatio;
+
+                    % Compute turbine, wake, and bypass velocities at each scale
+                    array.Uinf = conf(i,j).Uinf;
+                    [array.ut, array.uw, array.ub] = nw.calcVelocitiesFromInduction(array.Uinf, array.CT, array.alpha, array.gamma);
+                    device.Uinf = array.ut;
+                    [device.ut, device.uw, device.ub] = nw.calcVelocitiesFromInduction(device.Uinf, device.CT, device.alpha, device.gamma);
+
+                    % Package iteration diagnostics at array scale
+                    array.gammaIter = nw.packageDiagnostics(array.gamma, nw.calcGlobalThrust(array.gamma, array.alpha, array.beta, device.beta), ... 
+                                                            gammaAErr, gammaAExit);
+
+                    % Package iteration diagnostics at device scale
+                    device.gammaIter = nw.packageDiagnostics(device.gamma, nw.calcThrustFromInduction(device.gamma, device.alpha, device.beta), ...
+                                                             gammaLErr, gammaLExit);
+
+                    % Finally, add array and device structures to conf
+                    conf(i,j).array = array;
+                    conf(i,j).device = device;      
+                end
+            end
+        end
+
+        function [unconf, conf] = predictUnconfined(nw, conf, geom, gammaGuess, options)
+            % Applies Dehytriov et al (2023)'s two-scale blockage
+            % correction to the given array performance data and array
+            % layout.
+            % 
+            % Inputs (required)
+            %   conf       - A structure of confined performance data with fields
+            %                as described in the NWTwoScale class
+            %                documentation.
+            %   geom       - A structure of array and channel geometry
+            %                information with the following fields:
+            %                devArea  - Turbine projected area [m^2]
+            %                devWidth - Turbine width [m]
+            %                n        - Number of turbines in the array
+            %                w        -  Channel width [m]
+            %                s        - Spacing between turbines [m]
+            % 
             %   gammaGuess - An initial guess for the value of the local
             %                and array-scale wake velocity induction
             %                factor. A single guess is used to iterate on
@@ -84,124 +213,96 @@ classdef DehtyriovCorrector < BCBase
             %               TSR - unconfined tip-speed ratio
             %               velRatio   - Ratio between confined freestream
             %                            velocity and unconfined freestream velocity.
-            %               BA         - Calculated array-scale blockage
-            %               gammaAIter - Iteration information and
-            %                            converged value of array-scale
-            %                            wake velocity induction factor
-            %               alphaA     - Array-scale velocity induction factor
-            %                            at each point
-            %               BL         - Calculated local-scale blockage
-            %               gammaLIter - Iteration information and
-            %                            converged value of local-scale
-            %                            wake velocity induction factor
-            %               alphaA     - Local-scale velocity induction factor
-            %                            at each point
-            %
-            % See also: DehtyriovCorrector
+            %   conf  - The input structure, but with the following
+            %           fields added from solving LMADT:
+            %       UinfPrime - Unconfined freestream velocity [m/s] for
+            %                   use in blockage correction.
+            %       array     - A structure of flow quantities, thrust, and
+            %                   blockage at the array scale.
+            %       device    - A structure of flow quantities, thrust, and
+            %                   blockage at the device scale. 
+            %       The "array" and "device" substructures each have the
+            %       following fields:
+            %           beta  - Blockage ratio at this scale
+            %           CT    - Thrust coefficient at this scale
+            %           Uinf  - Freestream velocity at this scale
+            %           ut    - Velocity through the turbine at this scale
+            %           uw    - Wake velocity at this scale
+            %           ub    - Bypass velocity at this scale
+            %           alpha - Turbine induction factor at this scale
+            %           gamma - Wake induction factor at this scale
+            %           gammaIter - Information of the gamma iteration
+            %                       procedure conducted at this scale
+            arguments
+                nw
+                conf
+                geom
+                gammaGuess (1,1) = 0.8
+                options.correctionType {mustBeText, ismember(options.correctionType, {'standard', 'bluff body (array)', 'bluff body (device)'})} = 'standard';
+            end
 
-            % Check input for correct sizing
-            conf = dc.checkInputSizes(conf);
+            % Solve LMAD
+            conf = nw.solveLMAD(conf, geom, gammaGuess);
 
-            % Loop through all cases
-            for i = 1:size(conf, 1)
-                for j = 1:size(conf, 2)
-                    % Calculate blockage scales from the provided geometry data
-                    BL = dc.calcLocalBlockage(geom(i,j).D, geom(i,j).H, conf(i,j).d0, geom(i,j).s);
-                    BA = dc.calcArrayBlockage(geom(i,j).D, geom(i,j).n, conf(i,j).d0, geom(i,j).w, geom(i,j).s);
-
-                    % Debug: set BA to a value that is not 1
-                    BA = BA .* dc.debugMult;
-
-                    % Preallocate
-                    nPoints = length(conf(i,j).TSR);
-
-                    gammaA = zeros(nPoints, 1);
-                    gammaAErr = zeros(nPoints, 1);
-                    gammaAExit = zeros(nPoints, 1);
-                    alphaA = zeros(nPoints, 1);
-
-                    gammaL = zeros(nPoints, 1);
-                    gammaLErr = zeros(nPoints, 1);
-                    gammaLExit = zeros(nPoints, 1);
-                    alphaL = zeros(nPoints, 1);
-                    CTL = zeros(nPoints, 1);
-
-                    % Loop through all set-points to get gammas, alphas
-                    for k = 1:nPoints
-                        % Iterate to solve for gammaA, alphaA
-                        [gammaA(k), gammaAErr(k), gammaAExit(k)] = dc.convergeGammaA(gammaGuess, conf(i,j).CT(k), BA(k), BL(k));
-                        alphaA(k) = dc.calcAlpha(gammaA(k), BA(k));
-            
-                        % Solve for CTL
-                        CTL(k) = dc.calcLocalThrustFromGlobal(conf(i,j).CT(k), alphaA(k));
-            
-                        % Iterate to solve for gammaL, alphaL
-                        [gammaL(k), gammaLErr(k), gammaLExit(k)] = dc.convergeGammaL(gammaGuess, CTL(k), BL(k));
-                        alphaL(k) = dc.calcAlpha(gammaL(k), BL(k));
+            % Convert to unconfined using the appropriate scaling velocity
+            for i = 1:size(conf,1)
+                for j = 1:size(conf,2)
+                    switch options.correctionType
+                        case 'standard'
+                            scalingVel = conf(i,j).UinfPrime;
+                        case 'bluff body (array)'
+                            scalingVel = conf(i,j).array.ub;
+                        case 'bluff body (device)'
+                            scalingVel = conf(i,j).device.ub;
                     end
-            
-                    % Solve for CTA
-                    CTA = dc.calcArrayThrust(alphaA(k), BL, CTL);
-            
-                    % Solve for velocity correction factor
-                    velRatio = dc.calcVelocityRatio(alphaA, CTA);
-                    UinfPrime = conf(i,j).Uinf ./ velRatio;
-        
-                    % Perform correction
-                    unconf_temp = dc.convertConfToUnconf(conf(i,j), UinfPrime);
-        
-                    % Package results
-                    unconf_temp.BA = BA;
-                    unconf_temp.gammaA_iter = dc.packageDiagnostics(gammaA, dc.calcGlobalThrust(gammaA, alphaA, BA, BL), ... 
-                                                                    gammaAErr, gammaAExit);
-                    unconf_temp.alphaA = alphaA;
-
-
-                    unconf_temp.BL = BL;
-                    unconf_temp.gammaL_iter = dc.packageDiagnostics(gammaL, dc.calcThrustFromInduction(gammaL, alphaL, BL), ...
-                                                                    gammaLErr, gammaLExit);
-                    unconf_temp.alphaL = alphaL;
-
-                    unconf(i,j) = unconf_temp;
+                    unconf(i,j) = nw.convertConfToUnconf(conf(i,j), scalingVel);
                 end
             end
+
         end
     end
+   
 
     methods (Static, Access = public)
 
         %% Calculating blockage ratios at different scales
 
-        % Dehtryiov et al Equation 2, but adapated for cross-flow turbines.
-        function BL = calcLocalBlockage(D, H, h, s)
-            % Dehtryiov et al Equation 2, but adapated for cross-flow turbines.
+        % Nishino and Willden Equation 2.2, adapted to arbitrary turbine
+        % geometry.
+        function BL = calcLocalBlockage(devArea, devWidth, s, h)
+            % Nishino and Willden 2.2, but adapated for an arbitrary
+            % turbine geometry.
             % Calculates the local scale blockage, defined as the device area
             % divided by the local passage cross-sectional area
             % Inputs:
-                % D - Turbine diameter [m]
-                % H - Turbine blade span [m]
-                % h - Channel detph [m]
-                % s - Spacing between turbines [m]
+                % devArea  - Turbine projected area [m^2]
+                % devWidth - Device width [m]
+                % h        - Channel depth [m]
+                % s        - Spacing between turbines [m]
             % Outputs:
-                % BL - Local scale blockage ratio
-            A = D.*H;
-            BL = A ./ (h.*(D+s));
+                % BL       - Local scale blockage ratio
+
+            BL = devArea ./ (h .* (devWidth + s));
         end
 
-        % Dehtryiov et al Equation 1, but adapated for cross-flow turbines.
-        function BA = calcArrayBlockage(D, n, h, w, s)
-            % Dehtryiov et al Equation 1, but adapated for cross-flow turbines.
-            % Calculates the array scale blockage, defined as the array area
-            % (including spacing between turbines) divided by the channel area.
+        % Nishino and Willden Equation 2.3, adapted to arbitrary turbine
+        % geometry.
+        function BA = calcArrayBlockage(devWidth, n, s, w, h)
+            % Nishino and Willden Equation 2.3, but adapated for cross-flow
+            % turbines. Calculates the array scale blockage, defined as the
+            % array area (including spacing between turbines) divided by
+            % the channel area.
             % Inputs:
-                % D - Turbine diameter [m]
-                % n - Number of turbines in the array
-                % h - Channel detph [m]
-                % w - Channel width [m]
-                % s - Spacing between turbines [m]
+                % devArea  - Turbine projected area [m^2]
+                % devWidth - Turbine width [m]
+                % n        - Number of turbines in the array
+                % h        - Channel depth [m]
+                % w        - Channel width [m]
+                % s        - Spacing between turbines [m]
             % Outputs:
-                % BL - Local scale blockage ratio
-            BA = (h.*n.*(D+s)) ./ (h.*w);
+                % BA - Array scale blockage ratio
+
+            BA = (h .*n .* (devWidth+s)) ./ (h.*w);
         end
 
         %% Multi-scale equations
@@ -215,13 +316,13 @@ classdef DehtyriovCorrector < BCBase
             % wake velocity induction factor and blockage ratio at that scale.
             % Inputs:
             %   gamma - Velocity induction factor at the scale of interest
-            %   BA  - Blockage ratio at the scale of interest
+            %   B  - Blockage ratio at the scale of interest
             % Outputs:
             %   alpha - Velocity induction factor at the same scale as gamma
             %           and B
             num = (1 + gamma);
             den = (1 + B) + sqrt((1 - B).^2 + B.*(1 - 1./gamma).^2);
-            alpha = 1 - (num./den);
+            alpha = num ./ den;
         end
 
         % Dehtryiov et al Equations 6 and 7
@@ -235,11 +336,37 @@ classdef DehtyriovCorrector < BCBase
             %   B     - Blockage ratio at the scale of interest
             % Outputs:
             %   CTL    - Thrust coefficient at the scale of interest
-            num = (1 + gamma) - 2.*B.*(1 - alpha);
-            den = (1 - B.*(1 - alpha)./gamma).^2;
+            num = (1 + gamma) - 2.*B.*alpha;
+            den = (1 - B.*alpha./gamma).^2;
             CT = (1 - gamma) .* (num./den);
         end
 
+        % Computing velocities from induction factors
+        % NOTE: alpha is defined here as ut/Uinf (matching Dehtyriov et al
+        %       2021) in contrast to 1 - ut/Uinf (as found in Nishino and
+        %       Willden 2012 and Dehtryiov et al 2023)
+        % NOTE: While an expression for the bypass velocity is not included
+        %       in Nishino and Willden 2012 or Dehtyriov et al 2023, this
+        %       relationship is derived in multiple closed-channel and
+        %       open-channel LMADT models (as a consequence of the pressure
+        %       drop across the actuator disk) and is noted by Dehytriov et
+        %       al 2021 to apply at any given scale.
+        function [ut, uw, ub] = calcVelocitiesFromInduction(Uinf, CT, alpha, gamma)
+            % Uses the freestream velocity, thrust coefficient, and
+            % induction factors alpha and gamma to solve for the velocity
+            % at the turbine (ut), wake velocity (uw) and bypass velocity
+            % (ub) at a particular scale.
+
+            % Calculate turbine and wake velocities directly
+            ut = Uinf .* alpha; 
+            uw = Uinf .* gamma;
+
+            % Calculate bypass induction factor
+            bypassInduction = sqrt(CT + gamma.^2);
+
+            % Compute bypass velocity from this induction factor
+            ub = Uinf .* bypassInduction;
+        end
 
         %% Global-scale equations
 
@@ -254,8 +381,8 @@ classdef DehtyriovCorrector < BCBase
             %   BL  - Local-scale blockage
             % Outputs:
             %   CTG    - Global thrust coefficient
-            num = (1 + gammaA) - 2.*BA.*(1 - alphaA);
-            den = (1 - BA.*(1-alphaA)./gammaA).^2;
+            num = (1 + gammaA) - 2.*BA.*alphaA;
+            den = (1 - BA.*alphaA./gammaA).^2;
             CTG = ((1 - gammaA)./BL) .* (num./den);
         end
 
@@ -271,7 +398,7 @@ classdef DehtyriovCorrector < BCBase
             %   CTL    - Local thrust coefficient
             % Outputs:
             %   CTA    - Array-scale thrust coefficient
-            CTA = (1-alphaA).^2 .* BL .* CTL;
+            CTA = (alphaA).^2 .* BL .* CTL;
         end
 
         %% Local-Scale Equations
@@ -286,9 +413,9 @@ classdef DehtyriovCorrector < BCBase
             %   alphaA - Array-scale velocity induction factor
             % Outputs:
             %   CTL    - Local thrust coefficient
-            CTL = CTG ./ (1 - alphaA).^2;
+            CTL = CTG ./ (alphaA.^2);
         end
-
+        
         %% Velocity correction factor
 
         % Dehtryiov et al Equation 24
@@ -300,62 +427,111 @@ classdef DehtyriovCorrector < BCBase
             %   CTA    - array-scale thrust coefficient
             % Outputs:
             %   velRatio - Velocity correction factor: U/U'
-            num = 4.*(1 - alphaA);
-            den = 4.*(1 - alphaA).^2 + CTA;
+            num = 4.*(alphaA);
+            den = 4.*(alphaA).^2 + CTA;
             velRatio = num ./ den;
         end
 
         %% Iteration on GammaA
-
-        function err = compareCTG(gammaGuess,CTGActual, BA, BL)
+        function err = compareCTG(gammaAGuess, CTGActual, BA, BL)
             % Calculates the global thrust coefficient using the given guess
             % for gammaA and known BA and BL, and compares to the measured
             % global thrust coefficient. Returns the absolute error between the
             % two.
 
             % Use guess to compute alphaA
-            alphaA = DehtyriovCorrector.calcAlpha(gammaGuess, BA);
+            alphaA = NWTwoScale.calcAlpha(gammaAGuess, BA);
 
             % Compute CTG via induction
-            CTG = DehtyriovCorrector.calcGlobalThrust(gammaGuess, alphaA, BA, BL);
+            CTG = NWTwoScale.calcGlobalThrust(gammaAGuess, alphaA, BA, BL);
 
             % Compute error
-            err = CTGActual - CTG;
+            err = abs(CTGActual - CTG);
         end
 
-        function [gammaA, err, exitFlag] = convergeGammaA(gammaGuess, CTGActual, BA, BL)
+        function [gammaA, gammaAErr, gammaAExit] = convergeGammaA(gammaAGuess, CTGActual, BA, BL)
             % Iterates on gammaA using Dehtryiov et al Equations 28 and 9,
             % comparing the calculated global thrust coefficient to the
             % measured global thrust coefficient. Returns the converged value
             % of gammaA, as well as the resulting error and exit flag of
             % iteration.
-            [gammaA, err, exitFlag] = fzero(@(gammaA) DehtyriovCorrector.compareCTG(gammaA, CTGActual, BA, BL), gammaGuess);
+
+            % Preallocate
+            nPoints = length(CTGActual);
+            gammaA = zeros(nPoints, 1);
+            gammaAErr = zeros(nPoints, 1);
+            gammaAExit = zeros(nPoints, 1);
+
+            % Set options
+            opts = optimset('TolFun', 1e-10, 'TolX', 1e-10);
+
+            % Iterate
+            for k = 1:nPoints
+                currFun = @(gammaA) NWTwoScale.compareCTG(gammaA, CTGActual(k), BA(k), BL(k));
+                [gammaA(k), gammaAErr(k), gammaAExit(k)] = fminsearch(currFun, gammaAGuess, opts);
+            end
         end
 
         %% Iteration on GammaL
-        function err = compareCTL(gammaGuess, CTLActual, BL)
+        function err = compareCTL(gammaLGuess, CTLActual, BL)
             % Calculates the local thrust coefficient using the given guess
             % for gammaL and known BL, and compares to the local thrust
             % coefficient obtained from the Equation 5. Returns the error
             % between the two thrust calculations.
 
             % Use guess to compute alphaA
-            alphaL = DehtyriovCorrector.calcAlpha(gammaGuess, BL);
+            alphaL = NWTwoScale.calcAlpha(gammaLGuess, BL);
 
-            % Compute CTG via induction
-            CTL = DehtyriovCorrector.calcThrustFromInduction(gammaGuess, alphaL, BL);
+            % Compute CTL via induction
+            CTL = NWTwoScale.calcThrustFromInduction(gammaLGuess, alphaL, BL);
 
             % Compute error
-            err = CTLActual - CTL;
+            err = abs(CTLActual - CTL);
         end
 
-        function [gammaL, err, exitFlag] = convergeGammaL(gammaGuess, CLActual, BL)
+        function [gammaL, gammaLErr, gammaLExit] = convergeGammaL(gammaLGuess, CTL, BL)
             % Iterates on gammaL using Dehtryiov et al Equations 6 and 8,
             % comparing the local thrust coefficient calculated from induction
             % parameters to that calculated from the global thrust. Returns
             % the converged value of gammaL, as well as the resulting error 
             % and exit flag of iteration.
-            [gammaL, err, exitFlag] = fzero(@(gammaL) DehtyriovCorrector.compareCTL(gammaL, CLActual, BL), gammaGuess);
+
+            % Preallocate
+            nPoints = length(CTL);
+            gammaL = zeros(nPoints, 1);
+            gammaLErr = zeros(nPoints, 1);
+            gammaLExit = zeros(nPoints, 1);
+
+            % Set options
+            opts = optimset('TolFun', 1e-10, 'TolX', 1e-10);
+
+            % Iterate
+            for k = 1:nPoints
+                currFun = @(gammaL) NWTwoScale.compareCTL(gammaL, CTL(k), BL(k));
+                [gammaL(k), gammaLErr(k), gammaLExit(k)] = fminsearch(currFun, gammaLGuess);
+            end
+        end
+
+        %% Initialization/organization
+        function [s] = initializeScaleStruct()
+            % Preallocates structures for storing information about a given
+            % scale.
+            s = struct;
+            s.beta = [];
+            s.CT = [];
+            s.Uinf = [];
+            s.ut = [];
+            s.uw = [];
+            s.ub = [];
+            s.alpha = [];
+            s.gamma = [];
+        end
+
+        %% Print stuff out
+        function modelName = getModelName()
+            % Returns a label-friendly version of the blockage correction
+            % model name.
+            modelName = 'NW Two-Scale';
         end
     end
 end
