@@ -680,13 +680,13 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Using Ross and Polagye Equations 43-44, iterates to find ub
             % satisfies both EQ 43 and EQ 44, and returns that ub
             % Inputs:
-            %   ubGuess - Initial guess for ub (as a two element vector for fzero)
+            %   ubGuess - Initial guess for ub (as a scalar for fminsearch)
             %   conf    - Confined performance data as described in the
             %             HoulsbyOpenChannel class documentation.
             % Outputs:
-            %   ub      - Converged values of bypass velocity (m/s)
-            %   err     - Error between EQ 43 and EQ 44 at convergence
-            %   exitFlag - fzero exit condition
+            %   ub       - Converged values of bypass velocity (m/s)
+            %   err      - Error between EQ 43 and EQ 44 at convergence
+            %   exitFlag - fminsearch exit condition
 
             % Preallocate
             nPoints = length(conf.TSR);
@@ -803,7 +803,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             % Outputs:
             %   Uinf_2     - Converged value of freestream velocity at beta_2 (m/s)
             %   err      - Error between EQ 43 and EQ 44 at convergence
-            %   exitFlag - fzero exit condition
+            %   exitFlag - fminsearch exit condition
 
             % Preallocate
             nPoints = length(conf_1.TSR);
