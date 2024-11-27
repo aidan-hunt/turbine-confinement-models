@@ -32,14 +32,15 @@
 %
 % The methods above expect that confined performance data is provided as an
 % mxn structure array, conf, with the following fields:
-%   beta (required)   - blockage ratio
-%   Uinf   (required)   - undisturbed upstream freestream velocity (m/s)
+%   Uinf (required)   - undisturbed upstream freestream velocity (m/s)
 %   CT   (required)   - thrust coefficient
 %   CP   (optional)   - performance coefficient
 %   CQ   (optional)   - torque coefficient
 %   CL   (optional)   - lateral force coefficient
 %   CF   (optional)   - resultant force coefficient
 %   TSR  (optional)   - tip-speed ratio
+%   h    (3D only)    - channel depth
+% 
 % The fields of conf(i,j) must be vectors that are all the same size. You
 % can use the methods above to apply corrections and forecasts to multiple
 % datasets at once by specifying each dataset as an element of conf (e.g.,
@@ -56,7 +57,7 @@ classdef NWTwoScale < BCBase
 
     methods (Access = public)
         %% Main method for blockage correction
-        function conf = solveLMAD(nw, conf, geom, gammaGuess)
+        function conf = solveLMAD(nw, conf, geom, gammaGuess, mode)
             % Applies the two-scale LMADT model of Nishino and Willden 2012
             % following the implementation of Dehtyriov et al 2023 (Figure
             % 2) to compute the turbine, wake, and bypass velocities at
@@ -78,6 +79,9 @@ classdef NWTwoScale < BCBase
             %                and array-scale wake velocity induction
             %                factor. A single guess is used to iterate on
             %                both values.
+            %   mode       - Geometry evaluation mode: 2D or 3D. If 2D,
+            %                device area is treated as device width, and
+            %                channel depth is ignored. Default: 3D.
             % Outputs
             %   conf  - The input structure, but with the following
             %           fields added:
@@ -105,6 +109,7 @@ classdef NWTwoScale < BCBase
                 conf
                 geom
                 gammaGuess (1,1) = 0.8;
+                mode {ismember(mode, {'2D', '3D'})} = '3D'
             end
 
             % Check input for correct sizing
@@ -125,8 +130,14 @@ classdef NWTwoScale < BCBase
                     array = nw.initializeScaleStruct();
 
                     % Calculate blockage scales from the provided geometry data
-                    device.beta = nw.calcLocalBlockage(geom(i,j).devArea, geom(i,j).devWidth, geom(i,j).s, conf(i,j).h);
-                    array.beta = nw.calcArrayBlockage(geom(i,j).devWidth, geom(i,j).n, geom(i,j).s, geom(i,j).w, conf(i,j).h);
+                    switch mode
+                        case '2D'
+                            device.beta = nw.calcLocalBlockage(geom(i,j).devWidth, geom(i,j).devWidth, geom(i,j).s, ones(size(conf(i,j).CT)));
+                            array.beta = nw.calcArrayBlockage(geom(i,j).devWidth, geom(i,j).n, geom(i,j).s, geom(i,j).w, ones(size(conf(i,j).CT)));
+                        case '3D'
+                            device.beta = nw.calcLocalBlockage(geom(i,j).devArea, geom(i,j).devWidth, geom(i,j).s, conf(i,j).h);
+                            array.beta = nw.calcArrayBlockage(geom(i,j).devWidth, geom(i,j).n, geom(i,j).s, geom(i,j).w, conf(i,j).h);
+                    end
 
                     % Check for BA = 1 (singularity)
                     if any(array.beta == 1)
@@ -178,7 +189,7 @@ classdef NWTwoScale < BCBase
             end
         end
 
-        function [unconf, conf] = predictUnconfined(nw, conf, geom, gammaGuess, options)
+        function [unconf, conf] = predictUnconfined(nw, conf, geom, gammaGuess, mode, options)
             % Applies Dehytriov et al (2023)'s two-scale blockage
             % correction to the given array performance data and array
             % layout.
@@ -199,6 +210,9 @@ classdef NWTwoScale < BCBase
             %                and array-scale wake velocity induction
             %                factor. A single guess is used to iterate on
             %                both values.
+            %   mode       - Geometry evaluation mode: 2D or 3D. If 2D,
+            %                device area is treated as device width, and
+            %                channel depth is ignored. Default: 3D.
             % Outputs
             %   unconf    - A structure with the same size as the input
             %               conf structure and the following fields (if the
@@ -238,11 +252,12 @@ classdef NWTwoScale < BCBase
                 conf
                 geom
                 gammaGuess (1,1) = 0.8
+                mode {ismember(mode, {'2D', '3D'})} = '3D'
                 options.correctionType {mustBeText, ismember(options.correctionType, {'standard', 'bluff body (array)', 'bluff body (device)'})} = 'standard';
             end
 
             % Solve LMAD
-            conf = nw.solveLMAD(conf, geom, gammaGuess);
+            conf = nw.solveLMAD(conf, geom, gammaGuess, mode);
 
             % Convert to unconfined using the appropriate scaling velocity
             for i = 1:size(conf,1)

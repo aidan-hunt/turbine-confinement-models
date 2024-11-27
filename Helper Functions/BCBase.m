@@ -3,7 +3,7 @@
 % The BCBase class defines basic functions to be used by other classes that
 % extend BCBase to implement blockage corrections.
 classdef BCBase < matlab.mixin.Heterogeneous
-    properties (Constant, Access = public)
+    properties (Constant, Access = protected)
         % The correctorNames property establishes the field names that are
         % expected to be used by a class that extends BCBase to implement
         % a blockage correction.
@@ -16,7 +16,7 @@ classdef BCBase < matlab.mixin.Heterogeneous
             % Uinf   - Undisturbed freestream velocity (m/s)
             % h   - Undisturbed freestream depth (m)
             % beta - Blockage ratio (as a fraction)
-        correctorNames = {'CP', 'CT', 'CL', 'CF', 'CQ', 'TSR', 'Uinf', 'h', 'beta', 'temp'};
+        correctorNames = {'CP', 'CT', 'CL', 'CF', 'CQ', 'TSR', 'Uinf', 'h', 'beta'};
     end
 
     % Abstract methods: these must be implemented in order for a class to
