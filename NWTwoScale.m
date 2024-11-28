@@ -184,7 +184,10 @@ classdef NWTwoScale < BCBase
 
                     % Finally, add array and device structures to conf
                     conf(i,j).array = array;
-                    conf(i,j).device = device;      
+                    conf(i,j).device = device;    
+
+                    % Check that scales are linked as expected.
+                    conf(i,j).scaleCheck = nw.checkScaleCoupling(conf(i,j));
                 end
             end
         end
@@ -540,6 +543,28 @@ classdef NWTwoScale < BCBase
             s.ub = [];
             s.alpha = [];
             s.gamma = [];
+        end
+
+        %% Check scale compatability
+
+        function [scaleCheck] = checkScaleCoupling(conf)
+            
+            % Initialize
+            scaleCheck = struct;
+
+            % Check that global beta = array.beta * device.beta
+            scaleCheck.beta = ismembertol(conf.beta, (conf.array.beta .* conf.device.beta), 1e-10);
+
+            % Check that velocity scales are linked
+            scaleCheck.Uinf = ismembertol(conf.device.Uinf, (conf.Uinf .* conf.array.alpha), 1e-10);
+
+            % Check that global thrust is recovered from device thrust and
+            % array induction
+            scaleCheck.globalThrust = ismembertol(conf.CT, (conf.device.CT .* conf.array.alpha.^2), 1e-10);
+            
+            % Check that array thrust is recovered from device thrust
+            scaleCheck.arrayThrust = ismembertol(conf.array.CT, (conf.device.CT .* conf.device.beta .* conf.array.alpha.^2), 1e-10);
+
         end
 
         %% Print stuff out
