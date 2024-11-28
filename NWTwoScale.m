@@ -182,6 +182,11 @@ classdef NWTwoScale < BCBase
                     device.gammaIter = nw.packageDiagnostics(device.gamma, nw.calcThrustFromInduction(device.gamma, device.alpha, device.beta), ...
                                                              gammaLErr, gammaLExit);
 
+                    % % Calculate global inductions
+                    % conf(i,j).alpha = array.alpha .* device.alpha;
+                    % conf(i,j).gamma = array.gamma .* device.gamma;
+                    % [conf(i,j).ut, conf(i,j).uw, conf(i,j).ub] = nw.calcVelocitiesFromInduction(conf(i,j).Uinf, conf(i,j).CT, conf(i,j).alpha, conf(i,j).gamma);
+
                     % Finally, add array and device structures to conf
                     conf(i,j).array = array;
                     conf(i,j).device = device;    
