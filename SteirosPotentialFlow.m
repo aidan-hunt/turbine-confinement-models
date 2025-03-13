@@ -43,7 +43,7 @@ classdef SteirosPotentialFlow < BCBase
                 conf1
                 beta2
                 uGuess (1,1) double = 0.5
-                options.mode {ismember(options.mode, {'standard', 'bluff body'})} = 'standard';
+                options.correctionType {ismember(options.correctionType, {'standard', 'bluff body'})} = 'standard';
             end
 
             % Solve potential flow for provided data
@@ -53,7 +53,7 @@ classdef SteirosPotentialFlow < BCBase
                 for j = 1:size(conf1,2)
         
                     currForecast = struct;
-                    switch options.mode
+                    switch options.correctionType
                         case 'standard'
                             utUinf2 = st.betaMatchUtUinf(uGuess, conf1(i,j), beta2);
                             Uinf2 = conf1(i,j).ut ./ utUinf2;
@@ -85,9 +85,9 @@ classdef SteirosPotentialFlow < BCBase
                 st
                 conf
                 uGuess (1,1) double = 0.5
-                options.mode {ismember(options.mode, {'standard', 'bluff body'})} = 'standard';
+                options.correctionType {ismember(options.correctionType, {'standard', 'bluff body'})} = 'standard';
             end
-            [unconf, conf] = forecastConfined(st, conf, 0, uGuess, mode=options.mode);
+            [unconf, conf] = forecastConfined(st, conf, 0, uGuess, correctionType=options.correctionType);
         end
 
     end
@@ -104,7 +104,7 @@ classdef SteirosPotentialFlow < BCBase
             num = 4 .* (utUinf.*beta - 1) .* (1 - utUinf);
             den = (1 - beta) .* (2 - utUinf - utUinf.*beta);
 
-            CT = num./den .* ( (1-utUinf)./3 - (1-2.*utUinf.*beta + beta)./(1-beta) );
+            CT = num./den .* ( (1 - utUinf)./3 - (1 - 2.*utUinf.*beta + beta)./(1 - beta) );
         end
 
         function [ubUinf] = solveBypassVel(utUinf, beta)
@@ -121,7 +121,7 @@ classdef SteirosPotentialFlow < BCBase
 
         function [utUinf] = solveTurbVelFromBypass(ubUinf, beta)
         % Solves for the normalized velocity through the turbine as a function
-        % of ubUinf and beta using Steiros et al. Equation 2.17
+        % of ubUinf and beta using Steiros et al. Equation 2.17.
         % Note, this equation cannot be used if beta == 0, as the bypass
         % velocity is equal to the freestream velocity
 
@@ -143,9 +143,8 @@ classdef SteirosPotentialFlow < BCBase
 
         function [uwUinf] = solveWakeVel(utUinf, beta)
         % Calculates the wake velocity as a function of utUinf and beta,
-        % using Steiros equation 2.7
+        % using Steiros equation 2.8
 
-            %uwUinf = utUinf .* beta ./ betaWake;
             num = utUinf .* (1 - 2.*utUinf.*beta + beta);
             den = 2 - utUinf - utUinf.*beta;
 

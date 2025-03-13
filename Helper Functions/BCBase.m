@@ -193,5 +193,70 @@ classdef BCBase < matlab.mixin.Heterogeneous
                 end
             end
         end
+
+        %% Quantifying accuracy of forecasts
+
+        function [forecastErr] = quantifyForecastError(confPredict, confReference, options)
+            % Quantifies error in each point of a blockage forecast
+            % Inputs:
+            %    confPredict   - Structure of predicted performance data at
+            %                    a particular confined condition
+            %    confReference - Structure of actual performance data at 
+            %                    the same confined condition
+            % Outputs:
+            %   forecastErr    - A structure of the raw difference between
+            %                    the elements of confPredict and
+            %                    confReference. Error is evaluated for the
+            %                    following fields, if present in both
+            %                    structures: CP, CT, CL, CF, CQ, Uinf.
+            arguments
+                confPredict
+                confReference
+                options.eachPercentage = false;
+                options.peakPercentage = false;
+                options.absError = false;
+            end
+
+            forecastErr = struct;
+            predictMetrics = {'CP', 'CT', 'CL', 'CF', 'CQ', 'Uinf'}; % Meaningful metrics for quantifying error
+
+            for j = 1:size(confPredict, 2) % For each forecast blockage
+                % Get the current TSR
+                TSRInterp = confReference(j).TSR;
+                
+                % Get index of maximum performance
+                [~, maxInd] = max(confReference(j).CP);
+
+                for i = 1:size(confPredict, 1) % For each dataset that was used to make a forecast
+
+                    % Save TSR
+                    forecastErr(i,j).TSR = TSRInterp;
+
+                    for k = 1:length(predictMetrics)
+                        if isfield(confPredict, predictMetrics{k}) && isfield(confReference, predictMetrics{k})
+                            % Interpolate onto basis TSR
+                            currInterp = interp1(confPredict(i,j).TSR, confPredict(i,j).(predictMetrics{k}), TSRInterp, 'linear');
+                            
+                            % Compute error
+                            forecastErr(i,j).(predictMetrics{k}) = currInterp - confReference(j).(predictMetrics{k});
+
+                            if options.eachPercentage % Normalize each point by the reference point
+                                forecastErr(i,j).(predictMetrics{k}) = forecastErr(i,j).(predictMetrics{k}) ./ confReference(j).(predictMetrics{k}) .* 100;
+
+                            elseif options.peakPercentage % Normalize each point by max efficiency of reference
+
+                                forecastErr(i,j).(predictMetrics{k}) = forecastErr(i,j).(predictMetrics{k}) ./ confReference(j).(predictMetrics{k})(maxInd) .* 100;
+                            end
+
+                            % Take absolute value if requested
+                            if options.absError
+                                forecastErr(i,j).(predictMetrics{k}) = abs(forecastErr(i,j).(predictMetrics{k}));
+                            end
+                        end
+                    end
+
+                end
+            end
+        end
     end
 end
