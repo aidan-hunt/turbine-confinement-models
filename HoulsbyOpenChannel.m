@@ -107,10 +107,12 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %               added:
             %               Fr         - Depth-based Froude number (rectangular channel assumed)
             %               dhToh      - Normalized free-surface drop across the rotor
-            %               uw         - Wake velocity estimated from closed-channel LMAD
-            %               ub         - Bypass velocity estimated from closed-channel LMAD
-            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
-            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               uw         - Wake velocity estimated from LMAD
+            %               ub         - Bypass velocity estimated from LMAD
+            %               ut         - Velocity at the turbine estimated from LMAD
+            %               UinfPrime  - Unconfined freestream velocity estimated from LMAD
+            %               wakeArea   - Area of the wake, normalized by the channel area
+            %               bypassArea - Area of the bypass flow, normalized by the channel area
             %               hBypass    - Water depth at the location where ub and uw are defined.
             %               hdUp       - Water depth just upstream of the actuator disk.
             %               hdDown     - Water depth just downstream of the actuator disk.
@@ -168,6 +170,7 @@ classdef HoulsbyOpenChannel < BWClosedChannel
                     conf(i,j).ub = ub;
                     conf(i,j).ut = hb.solveUt(conf(i,j).uw, conf(i,j).ub, conf(i,j).h, conf(i,j).Uinf, conf(i,j).beta);
                     conf(i,j).UinfPrime = hb.solveUinfPrime(conf(i,j).Uinf, conf(i,j).CT, conf(i,j).ut);
+                    [conf(i,j).wakeArea, conf(i,j).bypassArea] = hb.calcWakeArea(conf(i,j).Uinf, conf(i,j).uw, conf(i,j).ub);
 
                     % Solve for depths
                     conf(i,j).hBypass = hb.calcBypassDepth(conf(i,j).h, conf(i,j).Uinf, conf(i,j).ub);
@@ -246,10 +249,12 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %               added:
             %               Fr         - Depth-based Froude number (rectangular channel assumed)
             %               dhToh      - Normalized free-surface drop across the rotor
-            %               uw         - Wake velocity estimated from closed-channel LMAD
-            %               ub         - Bypass velocity estimated from closed-channel LMAD
-            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
-            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               uw         - Wake velocity estimated from LMAD
+            %               ub         - Bypass velocity estimated from LMAD
+            %               ut         - Velocity at the turbine estimated from LMAD
+            %               UinfPrime  - Unconfined freestream velocity estimated from LMAD
+            %               wakeArea   - Area of the wake, normalized by the channel area
+            %               bypassArea - Area of the bypass flow, normalized by the channel area
             %               hBypass    - Water depth at the location where ub and uw are defined.
             %               hdUp       - Water depth just upstream of the actuator disk.
             %               hdDown     - Water depth just downstream of the actuator disk.
@@ -337,10 +342,12 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %               added:
             %               Fr         - Depth-based Froude number (rectangular channel assumed)
             %               dhToh      - Normalized free-surface drop across the rotor
-            %               uw         - Wake velocity estimated from closed-channel LMAD
-            %               ub         - Bypass velocity estimated from closed-channel LMAD
-            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
-            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               uw         - Wake velocity estimated from LMAD
+            %               ub         - Bypass velocity estimated from LMAD
+            %               ut         - Velocity at the turbine estimated from LMAD
+            %               UinfPrime  - Unconfined freestream velocity estimated from LMAD
+            %               wakeArea   - Area of the wake, normalized by the channel area
+            %               bypassArea - Area of the bypass flow, normalized by the channel area
             %               hBypass    - Water depth at the location where ub and uw are defined.
             %               hdUp       - Water depth just upstream of the actuator disk.
             %               hdDown     - Water depth just downstream of the actuator disk.
@@ -462,10 +469,12 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             %               added:
             %               Fr         - Depth-based Froude number (rectangular channel assumed)
             %               dhToh      - Normalized free-surface drop across the rotor
-            %               uw         - Wake velocity estimated from closed-channel LMAD
-            %               ub         - Bypass velocity estimated from closed-channel LMAD
-            %               ut         - Velocity at the turbine estimated from closed-channel LMAD
-            %               UinfPrime  - Unconfined freestream velocity estimated from closed-channel LMAD
+            %               uw         - Wake velocity estimated from LMAD
+            %               ub         - Bypass velocity estimated from LMAD
+            %               ut         - Velocity at the turbine estimated from LMAD
+            %               UinfPrime  - Unconfined freestream velocity estimated from LMAD
+            %               wakeArea   - Area of the wake, normalized by the channel area
+            %               bypassArea - Area of the bypass flow, normalized by the channel area
             %               hBypass    - Water depth at the location where ub and uw are defined.
             %               hdUp       - Water depth just upstream of the actuator disk.
             %               hdDown     - Water depth just downstream of the actuator disk.
@@ -670,6 +679,17 @@ classdef HoulsbyOpenChannel < BWClosedChannel
             for i = 1:numel(conf)
                 conf(i).h = depthVal .* ones(size(conf(i).h));
             end
+        end
+
+        %% Channel area calculations
+
+        function [wakeArea, bypassArea] = calcWakeArea(Uinf, uw, ub)
+        % Calculates the area of the wake normalized by the channel area
+        % based on the wake and bypass velocities obtained by solving
+        % LMADT.
+
+            wakeArea = (Uinf - ub) ./ (uw - ub);
+            bypassArea = 1-wakeArea;
         end
 
         %% Iteration scheme for solving for ub using Ross and Polagye equations 43 and 44

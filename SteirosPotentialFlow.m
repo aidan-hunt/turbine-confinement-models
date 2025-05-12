@@ -63,7 +63,8 @@ classdef SteirosPotentialFlow < BCBase
                             if beta2 == 0
                                 ubUinf2 = ones(size(conf1(i,j).CT));
                             else
-                                ubUinf2 = st.betaMatchUbUinf(uGuess, conf1(i,j), beta2);
+                                ubUinf2Guess = conf1(i,j).ub ./ conf1(i,j).Uinf;
+                                ubUinf2 = st.betaMatchUbUinf(ubUinf2Guess, conf1(i,j), beta2);
                             end
                             Uinf2 = conf1(i,j).ub ./ ubUinf2;
                             currForecast = st.convertConfToUnconf(conf1(i,j), Uinf2);
@@ -238,7 +239,7 @@ classdef SteirosPotentialFlow < BCBase
                 currFun = @(ubUinf2) SteirosPotentialFlow.ubUinf2Compare(ubUinf2, beta2, ubUinf1(i), conf1.CT(i));
 
                 % Search for minimum error
-                [ubUinf2(i), err(i), exitFlag(i)] = fminsearch(currFun, ubUinf2Guess);
+                [ubUinf2(i), err(i), exitFlag(i)] = fminsearch(currFun, ubUinf2Guess(i));
             end
 
         end
