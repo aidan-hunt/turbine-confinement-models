@@ -1,4 +1,4 @@
-# linear-momentum
+# turbine-confinement-models
 This repository contains MATLAB scripts for applying various confinement models to turbine performance data to predict aspects of the flow field around the turbine.
 These models can be used as the basis for analytical blockage corrections, which predict turbine performance in unconfined flow from measured or simulated performance in confined flow.
 This repository was developed in support of the following manuscripts/journal articles:
