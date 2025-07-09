@@ -3,7 +3,7 @@ This repository contains MATLAB scripts for applying various confinement models 
 These models can be used as the basis for analytical blockage corrections, which predict turbine performance in unconfined flow from measured or simulated performance in confined flow.
 This repository was developed in support of the following manuscripts/journal articles:
 - Hunt et. al., "Experimental validation of a linear momentum and bluff-body model for high-blockage cross-flow turbine arrays". [Preprint available on arXiv](https://doi.org/10.48550/arXiv.2408.16705).
-- Hunt et. al., "Performance characteristics and bluff-body modeling of high-blockage cross-flow turbine arrays with varying rotor geometry". [Preprint available on arXiv](https://doi.org/10.48550/arXiv.2410.19165).
+- Hunt et. al., "Performance characteristics and bluff-body modeling of high-blockage cross-flow turbine arrays with varying rotor geometry", 2025, [*Journal of Renewable and Sustainable Energy*](https://doi.org/10.1063/5.0272110). [Open-Access PDF on arXiv](https://doi.org/10.48550/arXiv.2410.19165).
 
 ## Confinement model classes
 Each confinement model is implemented as a MATLAB class:
