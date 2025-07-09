@@ -293,7 +293,10 @@ classdef HoulsbyOpenChannel < BWClosedChannel
 
             for i = 1:size(conf,1)
                 for j = 1:size(conf,2)
+                    % Scale all performance metrics
                     unconf(i,j) = hb.convertConfToUnconf(conf(i,j), conf(i,j).(scalingVelName));
+
+                    % Calculate unconfined wake velocity
                 end
             end
 
